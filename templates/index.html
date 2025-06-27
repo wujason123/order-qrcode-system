@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单查询系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        
+        .card {
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border: none;
+            border-radius: 15px;
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 1.5rem;
+        }
+        
+        .order-card {
+            transition: transform 0.3s ease;
+            margin-bottom: 1rem;
+        }
+        
+        .order-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .amount {
+            color: #e74c3c;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        
+        .order-id {
+            background: #f8f9fa;
+            padding: 0.5rem;
+            border-radius: 8px;
+            font-family: monospace;
+            border-left: 4px solid #667eea;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 3rem;
+        }
+        
+        .spinner {
+            width: 3rem;
+            height: 3rem;
+        }
+        
+        .error-message {
+            background: #ffe6e6;
+            border: 1px solid #ff9999;
+            color: #cc0000;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+        
+        .success-message {
+            background: #e6ffe6;
+            border: 1px solid #99ff99;
+            color: #006600;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+        
+        .search-box {
+            position: relative;
+        }
+        
+        .search-box .form-control {
+            padding-left: 3rem;
+            border-radius: 25px;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        
+        .search-box .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 0.75rem 2rem;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* 移动端优化样式 */
+        @media (max-width: 768px) {
+            .card-body .table {
+                font-size: 14px;
+            }
+            
+            .card-header h4 {
+                font-size: 1.3rem;
+            }
+            
+            .table td {
+                padding: 12px 8px !important;
+                word-break: break-word;
+            }
+            
+            .table td:first-child {
+                width: 30% !important;
+                font-size: 13px;
+            }
+            
+            .table td:last-child {
+                font-size: 16px;
+            }
+            
+            .btn-group .btn {
+                font-size: 12px;
+                padding: 6px 12px;
+            }
+        }
+        
+        /* Excel表格样式增强 */
+        .excel-table {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        
+        .excel-table td {
+            position: relative;
+        }
+        
+        .excel-table .table-active {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%) !important;
+        }
+        
+        /* 图标颜色样式 */
+        .text-purple {
+            color: #6f42c1 !important;
+        }
+        
+        /* 订单详情页面专用样式 */
+        .order-details-card {
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        
+        .order-details-card .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 20px;
+        }
+        
+        /* 表格行悬停效果 */
+        .excel-table tbody tr:hover {
+            background-color: rgba(102, 126, 234, 0.05);
+        }
+        
+        /* 操作按钮优化 */
+        .action-buttons .btn {
+            margin: 0 5px;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .action-buttons .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <!-- 页面标题 -->
+        <div class="text-center mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div></div> <!-- 占位元素 -->
+                <h1 class="text-white mb-0">
+                    <i class="bi bi-qr-code"></i> 订单查询系统
+                </h1>
+                <!-- 用户信息和登出按钮 -->
+                {% if session.logged_in %}
+                <div class="dropdown">
+                    <button class="btn btn-light btn-sm dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle"></i> {{ session.username }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><span class="dropdown-item-text"><i class="bi bi-info-circle"></i> 管理员身份</span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> 退出登录</a></li>
+                    </ul>
+                </div>
+                {% else %}
+                <a href="{{ url_for('login') }}" class="btn btn-light btn-sm">
+                    <i class="bi bi-box-arrow-in-right"></i> 登录
+                </a>
+                {% endif %}
+            </div>
+            <p class="text-white-50">扫描二维码或输入订单号查询订单详情</p>
+        </div>
+
+        <!-- Excel文件上传区域 - 仅管理员可见 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-cloud-upload"></i> 导入Excel文件
+                </h5>
+            </div>
+            <div class="card-body">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="excelFile" class="form-label">选择Excel文件</label>
+                        <input type="file" class="form-control" id="excelFile" name="file" 
+                               accept=".xlsx,.xls" required>
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i> 
+                            支持 .xlsx 和 .xls 格式，文件需包含：订单号、客户姓名、订单日期、金额、产品详情列
+                            <br>
+                            <a href="/download/template" class="text-decoration-none">
+                                <i class="bi bi-download"></i> 下载Excel模板文件
+                            </a>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-primary" id="uploadBtn">
+                            <i class="bi bi-upload"></i> 上传并生成二维码
+                        </button>
+                    </div>
+                </form>
+                <div id="uploadProgress" style="display: none;" class="mt-3">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                        <span>正在处理文件...</span>
+                    </div>
+                    <div class="progress mt-2">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div id="uploadResult"></div>
+            </div>
+        </div>
+
+        <!-- 使用说明区域 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-info-circle"></i> 使用说明
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 text-center mb-3">
+                        <div class="p-3">
+                            <i class="bi bi-cloud-upload text-primary" style="font-size: 2rem;"></i>
+                            <h6 class="mt-2">1. 上传Excel</h6>
+                            <p class="small text-muted">上传包含订单信息的Excel文件</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-center mb-3">
+                        <div class="p-3">
+                            <i class="bi bi-qr-code text-success" style="font-size: 2rem;"></i>
+                            <h6 class="mt-2">2. 生成二维码</h6>
+                            <p class="small text-muted">系统自动为每个订单生成二维码</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-center mb-3">
+                        <div class="p-3">
+                            <i class="bi bi-phone text-info" style="font-size: 2rem;"></i>
+                            <h6 class="mt-2">3. 手机扫码</h6>
+                            <p class="small text-muted">用手机扫描二维码查看订单详情</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-lightbulb"></i> 
+                    <strong>提示：</strong>手机扫描二维码后会自动打开浏览器显示订单详情，无需在此页面扫描
+                </div>
+            </div>
+        </div>
+
+        <!-- 手动查询区域 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-search"></i> 手动查询订单
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="search-box">
+                    <i class="bi bi-search search-icon"></i>
+                    <input type="text" class="form-control" id="searchOrderId" 
+                           placeholder="请输入订单号（例如：ORD001）">
+                </div>
+                <div class="text-center mt-3">
+                    <button class="btn btn-primary" onclick="searchOrder()">
+                        <i class="bi bi-search"></i> 查询订单
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 订单详情显示区域 -->
+        <div id="orderResult" style="display: none;"></div>
+
+        <!-- 所有订单列表 - 仅管理员可见 -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-list-ul"></i> 所有订单列表
+                </h5>
+                <div class="d-flex align-items-center gap-2">
+                    <span id="ordersCount" class="badge bg-primary"></span>
+                    
+                    <!-- 打印功能按钮组 -->
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllPrintCheckboxes()" title="全选/取消全选">
+                            <i class="bi bi-check2-all"></i> 全选
+                        </button>
+                        <button type="button" class="btn btn-outline-success btn-sm" onclick="exportToExcel()" title="导出Excel打印">
+                            <i class="bi bi-file-earmark-excel"></i> Excel打印
+                        </button>
+                        <button type="button" class="btn btn-outline-info btn-sm" onclick="openPrintPreview()" title="网页打印预览">
+                            <i class="bi bi-printer"></i> 网页打印
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="ordersList">
+                    <div class="loading">
+                        <div class="spinner-border spinner text-primary" role="status">
+                            <span class="visually-hidden">加载中...</span>
+                        </div>
+                        <p class="mt-2 text-muted">正在加载订单列表...</p>
+                    </div>
+                </div>
+                
+                <!-- 分页导航 -->
+                <nav aria-label="订单列表分页" id="paginationNav" style="display: none;">
+                    <ul class="pagination justify-content-center mt-4" id="pagination"></ul>
+                </nav>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <div class="text-center mt-4 text-white-50">
+            <p><i class="bi bi-info-circle"></i> 订单二维码查询系统 v1.0.0</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 全局变量
+        let allOrders = []; // 存储所有订单数据
+        let currentPage = 1; // 当前页码
+        const ordersPerPage = 9; // 每页显示订单数
+        
+        // 页面加载时获取订单列表
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAllOrders();
+            
+            // 检查URL参数是否有订单号
+            const urlParams = new URLSearchParams(window.location.search);
+            const orderId = urlParams.get('order_id');
+            if (orderId) {
+                document.getElementById('searchOrderId').value = orderId;
+                searchOrder();
+            }
+            
+            // 回车键搜索
+            document.getElementById('searchOrderId').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchOrder();
+                }
+            });
+
+            // 文件上传表单处理
+            document.getElementById('uploadForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                uploadExcelFile();
+            });
+        });
+
+        // 搜索指定订单
+        async function searchOrder() {
+            const orderId = document.getElementById('searchOrderId').value.trim();
+            if (!orderId) {
+                showError('请输入订单号');
+                return;
+            }
+
+            const resultDiv = document.getElementById('orderResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="loading">
+                            <div class="spinner-border spinner text-primary" role="status"></div>
+                            <p class="mt-2 text-muted">正在查询订单 ${orderId}...</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch(`/order?order_id=${encodeURIComponent(orderId)}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    displayOrderDetails(data.data);
+                } else {
+                    showError(data.message || '查询失败');
+                }
+            } catch (error) {
+                console.error('查询错误:', error);
+                showError('网络错误，请检查连接');
+            }
+        }
+
+        // 显示订单详情
+        function displayOrderDetails(order) {
+            const resultDiv = document.getElementById('orderResult');
+            resultDiv.innerHTML = `
+                <div class="card order-details-card">
+                    <div class="card-header text-center">
+                        <h4 class="mb-0">
+                            <i class="bi bi-receipt"></i> 订单查询结果
+                        </h4>
+                    </div>
+                    <div class="card-body p-0">
+                        <!-- Excel表格样式显示 -->
+                        <div class="table-responsive">
+                            <table class="table table-bordered excel-table mb-0" style="font-size: 16px;">
+                                <tbody>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="width: 30%; background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-tag text-primary"></i><br>
+                                            <small>订单号</small>
+                                        </td>
+                                        <td class="text-center fw-bold" style="font-family: 'Courier New', monospace; font-size: 20px; color: #0066cc; border: 2px solid #dee2e6; background: #fff; vertical-align: middle;">
+                                            ${order.order_id}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-person text-success"></i><br>
+                                            <small>客户姓名</small>
+                                        </td>
+                                        <td class="text-center" style="font-size: 18px; color: #333; border: 2px solid #dee2e6; background: #fff; vertical-align: middle; font-weight: 500;">
+                                            ${order.customer_name}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-calendar text-info"></i><br>
+                                            <small>订单日期</small>
+                                        </td>
+                                        <td class="text-center" style="font-size: 18px; color: #333; border: 2px solid #dee2e6; background: #fff; vertical-align: middle; font-weight: 500;">
+                                            ${order.order_date}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-currency-yen text-warning"></i><br>
+                                            <small>金额</small>
+                                        </td>
+                                        <td class="text-center fw-bold" style="font-size: 22px; color: #e74c3c; border: 2px solid #dee2e6; background: #fff9f9; vertical-align: middle; font-family: 'Arial Black', sans-serif;">
+                                            ¥${parseFloat(order.amount).toFixed(2)}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: top; padding-top: 20px;">
+                                            <i class="bi bi-box text-purple"></i><br>
+                                            <small>产品详情</small>
+                                        </td>
+                                        <td style="border: 2px solid #dee2e6; padding: 20px; line-height: 1.8; background: #fff;">
+                                            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; font-size: 16px; text-align: left;">
+                                                ${order.product_details}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- 二维码区域 -->
+                        <div class="text-center p-4 border-top" style="background-color: #f8f9fa;">
+                            <div style="display: inline-block; padding: 15px; background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                <img src="/qrcode/${order.order_id}" 
+                                     class="img-fluid" 
+                                     style="max-width: 150px; border: 1px solid #ddd; border-radius: 8px;"
+                                     alt="订单二维码"
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                <div style="display: none;" class="text-muted">
+                                    <i class="bi bi-exclamation-triangle"></i> 二维码不可用
+                                </div>
+                            </div>
+                            <p class="small text-muted mt-2 mb-0">
+                                <i class="bi bi-qr-code"></i> 订单专用二维码
+                            </p>
+                        </div>
+                        
+                        <!-- 操作按钮 -->
+                        <div class="text-center p-3 border-top action-buttons">
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-outline-primary btn-sm" onclick="window.location.reload()">
+                                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="window.history.back()">
+                                    <i class="bi bi-arrow-left"></i> 返回
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" onclick="shareOrder('${order.order_id}')">
+                                    <i class="bi bi-share"></i> 分享
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 移动端优化提示 -->
+                <div class="d-block d-md-none mt-3">
+                    <div class="alert alert-info">
+                        <i class="bi bi-phone"></i> 
+                        <strong>手机查看提示：</strong> 可以截图保存此订单信息，或点击"分享"按钮发送给他人
+                    </div>
+                </div>
+            `;
+        }
+
+        // 加载所有订单
+        async function loadAllOrders() {
+            try {
+                const response = await fetch('/orders');
+                const data = await response.json();
+
+                if (data.success) {
+                    allOrders = data.data; // 存储所有订单数据
+                    currentPage = 1; // 重置到第一页
+                    displayOrdersList();
+                } else {
+                    document.getElementById('ordersList').innerHTML = 
+                        `<div class="error-message">加载失败: ${data.message}</div>`;
+                }
+            } catch (error) {
+                console.error('加载订单列表错误:', error);
+                document.getElementById('ordersList').innerHTML = 
+                    '<div class="error-message">网络错误，无法加载订单列表</div>';
+            }
+        }
+
+        // 显示订单列表（分页版本）
+        function displayOrdersList() {
+            const listDiv = document.getElementById('ordersList');
+            const countBadge = document.getElementById('ordersCount');
+            const paginationNav = document.getElementById('paginationNav');
+            
+            if (allOrders.length === 0) {
+                listDiv.innerHTML = '<div class="text-center text-muted">暂无订单数据</div>';
+                countBadge.textContent = '0 条订单';
+                paginationNav.style.display = 'none';
+                return;
+            }
+
+            // 更新订单总数显示
+            countBadge.textContent = `${allOrders.length} 条订单`;
+
+            // 计算分页
+            const totalPages = Math.ceil(allOrders.length / ordersPerPage);
+            const startIndex = (currentPage - 1) * ordersPerPage;
+            const endIndex = startIndex + ordersPerPage;
+            const currentOrders = allOrders.slice(startIndex, endIndex);
+
+            // 显示当前页的订单
+            let html = `<div class="row">`;
+            currentOrders.forEach(order => {
+                html += `
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card order-card h-100 position-relative" 
+                             onclick="selectOrder('${order.order_id}')">
+                            <!-- 打印选择复选框 -->
+                            <div class="form-check position-absolute" style="top: 10px; right: 10px; z-index: 10;">
+                                <input class="form-check-input print-checkbox" type="checkbox" 
+                                       value="${order.order_id}" id="print_${order.order_id}"
+                                       onclick="event.stopPropagation();">
+                                <label class="form-check-label visually-hidden" for="print_${order.order_id}">
+                                    选择打印
+                                </label>
+                            </div>
+                            
+                            <div class="card-body" style="cursor: pointer;">
+                                <div class="order-id mb-2">${order.order_id}</div>
+                                <p class="mb-1"><strong>${order.customer_name}</strong></p>
+                                <p class="mb-1 text-muted small">${order.order_date}</p>
+                                <p class="amount mb-2">¥${parseFloat(order.amount).toFixed(2)}</p>
+                                <p class="text-muted small" style="height: 3em; overflow: hidden;">
+                                    ${order.product_details}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+            
+            listDiv.innerHTML = html;
+
+            // 显示分页导航
+            if (totalPages > 1) {
+                displayPagination(totalPages);
+                paginationNav.style.display = 'block';
+            } else {
+                paginationNav.style.display = 'none';
+            }
+        }
+
+        // 显示分页导航
+        function displayPagination(totalPages) {
+            const pagination = document.getElementById('pagination');
+            let html = '';
+
+            // 上一页按钮
+            html += `
+                <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="javascript:void(0)" onclick="goToPage(${currentPage - 1})">
+                        <i class="bi bi-chevron-left"></i> 上一页
+                    </a>
+                </li>
+            `;
+
+            // 页码按钮
+            const maxVisiblePages = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+            
+            // 调整开始页码
+            if (endPage - startPage + 1 < maxVisiblePages) {
+                startPage = Math.max(1, endPage - maxVisiblePages + 1);
+            }
+
+            // 第一页
+            if (startPage > 1) {
+                html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goToPage(1)">1</a></li>`;
+                if (startPage > 2) {
+                    html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+
+            // 中间页码
+            for (let i = startPage; i <= endPage; i++) {
+                html += `
+                    <li class="page-item ${i === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="javascript:void(0)" onclick="goToPage(${i})">${i}</a>
+                    </li>
+                `;
+            }
+
+            // 最后一页
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+                html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goToPage(${totalPages})">${totalPages}</a></li>`;
+            }
+
+            // 下一页按钮
+            html += `
+                <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                    <a class="page-link" href="javascript:void(0)" onclick="goToPage(${currentPage + 1})">
+                        下一页 <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+            `;
+
+            pagination.innerHTML = html;
+        }
+
+        // 跳转到指定页码
+        function goToPage(page) {
+            const totalPages = Math.ceil(allOrders.length / ordersPerPage);
+            if (page < 1 || page > totalPages) return;
+            
+            currentPage = page;
+            displayOrdersList();
+            
+            // 滚动到订单列表顶部
+            document.querySelector('.card-header h5').scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start' 
+            });
+        }
+
+        // 选择订单
+        function selectOrder(orderId) {
+            document.getElementById('searchOrderId').value = orderId;
+            searchOrder();
+            
+            // 滚动到订单详情
+            document.getElementById('orderResult').scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start' 
+            });
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            const resultDiv = document.getElementById('orderResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="error-message">
+                            <i class="bi bi-exclamation-triangle"></i> ${message}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 上传Excel文件
+        async function uploadExcelFile() {
+            const fileInput = document.getElementById('excelFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showUploadError('请选择要上传的文件');
+                return;
+            }
+
+            // 检查文件类型
+            const allowedTypes = [
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.ms-excel'
+            ];
+            if (!allowedTypes.includes(file.type) && !file.name.match(/\.(xlsx|xls)$/i)) {
+                showUploadError('文件格式不支持，请上传.xlsx或.xls格式的Excel文件');
+                return;
+            }
+
+            // 检查文件大小（16MB）
+            if (file.size > 16 * 1024 * 1024) {
+                showUploadError('文件大小超过16MB限制');
+                return;
+            }
+
+            // 显示上传进度
+            showUploadProgress();
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                hideUploadProgress();
+
+                if (data.success) {
+                    showUploadSuccess(data.message, data.orders_count, data.qr_count);
+                    // 刷新订单列表
+                    loadAllOrders();
+                    // 清空文件选择
+                    fileInput.value = '';
+                } else {
+                    // 检查是否有重复订单号信息
+                    const duplicates = data.duplicates || null;
+                    showUploadError(data.error || '上传处理失败', duplicates);
+                }
+            } catch (error) {
+                console.error('上传错误:', error);
+                hideUploadProgress();
+                showUploadError('网络错误，请检查连接');
+            }
+        }
+
+        // 显示上传进度
+        function showUploadProgress() {
+            document.getElementById('uploadProgress').style.display = 'block';
+            document.getElementById('uploadBtn').disabled = true;
+            document.getElementById('uploadResult').innerHTML = '';
+        }
+
+        // 隐藏上传进度
+        function hideUploadProgress() {
+            document.getElementById('uploadProgress').style.display = 'none';
+            document.getElementById('uploadBtn').disabled = false;
+        }
+
+        // 显示上传成功消息
+        function showUploadSuccess(message, ordersCount, qrCount) {
+            document.getElementById('uploadResult').innerHTML = `
+                <div class="success-message">
+                    <i class="bi bi-check-circle"></i> 
+                    <strong>上传成功！</strong><br>
+                    ${message}<br>
+                    <small>处理了 ${ordersCount} 条订单，生成了 ${qrCount} 个二维码</small>
+                </div>
+            `;
+        }
+
+        // 显示上传错误消息
+        function showUploadError(message, duplicates = null) {
+            let errorHtml = `
+                <div class="error-message">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    <strong>上传失败：</strong> ${message}
+            `;
+            
+            // 如果有重复订单号，显示详细列表
+            if (duplicates && Array.isArray(duplicates) && duplicates.length > 0) {
+                errorHtml += `
+                    <div class="mt-2">
+                        <strong>重复的订单号：</strong>
+                        <ul class="mb-0 mt-1">
+                `;
+                duplicates.forEach(orderId => {
+                    errorHtml += `<li><code>${orderId}</code></li>`;
+                });
+                errorHtml += `
+                        </ul>
+                                                <div class="mt-2">
+                            <small class="text-muted d-block mb-2">
+                                <i class="bi bi-info-circle"></i> 
+                                请检查Excel文件，确保订单号唯一，或点击下方按钮删除数据库中的重复订单
+                            </small>
+                            <button class="btn btn-warning btn-sm" onclick="deleteDuplicateOrders(${JSON.stringify(duplicates)})">
+                                <i class="bi bi-trash"></i> 删除数据库中的重复订单
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            errorHtml += `</div>`;
+            document.getElementById('uploadResult').innerHTML = errorHtml;
+        }
+
+        // Excel导出打印功能
+        async function exportToExcel() {
+            try {
+                // 显示加载状态
+                const exportBtn = document.querySelector('[onclick="exportToExcel()"]');
+                const originalText = exportBtn.innerHTML;
+                exportBtn.disabled = true;
+                exportBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 生成中...';
+                
+                const response = await fetch('/export/qrcodes');
+                
+                if (response.ok) {
+                    // 创建下载链接
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `订单二维码打印表_${new Date().toISOString().slice(0,19).replace(/[:-]/g, '')}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    // 显示成功提示
+                    showTemporaryMessage('✅ Excel文件已生成，请打开文件进行打印', 'success');
+                } else {
+                    const error = await response.json();
+                    showTemporaryMessage(`❌ 导出失败: ${error.error}`, 'error');
+                }
+                
+                // 恢复按钮状态
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = originalText;
+                
+            } catch (error) {
+                console.error('Excel导出错误:', error);
+                showTemporaryMessage('❌ 导出过程中发生错误', 'error');
+                
+                // 恢复按钮状态
+                const exportBtn = document.querySelector('[onclick="exportToExcel()"]');
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = '<i class="bi bi-file-earmark-excel"></i> Excel打印';
+            }
+        }
+
+        // 打开网页打印预览
+        function openPrintPreview() {
+            // 获取选中的订单
+            const checkboxes = document.querySelectorAll('.print-checkbox:checked');
+            let selectedOrders = Array.from(checkboxes).map(cb => cb.value);
+            
+            // 如果没有选中任何订单，询问是否打印全部
+            if (selectedOrders.length === 0) {
+                if (confirm('没有选择订单，是否打印所有订单？')) {
+                    selectedOrders = allOrders.map(order => order.order_id);
+                } else {
+                    showTemporaryMessage('请先选择要打印的订单（点击订单卡片右上角的复选框）', 'info');
+                    return;
+                }
+            }
+            
+            // 构建查询参数
+            const params = new URLSearchParams();
+            selectedOrders.forEach(orderId => params.append('order_id', orderId));
+            
+            // 打开打印预览窗口
+            const printWindow = window.open(`/print?${params.toString()}`, 'printPreview', 
+                'width=800,height=600,scrollbars=yes,resizable=yes');
+            
+            if (!printWindow) {
+                showTemporaryMessage('无法打开打印预览窗口，请检查浏览器弹窗设置', 'error');
+            }
+        }
+
+        // 显示临时消息
+        function showTemporaryMessage(message, type = 'info') {
+            // 创建消息元素
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'info'} alert-dismissible fade show position-fixed`;
+            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // 添加到页面
+            document.body.appendChild(alertDiv);
+            
+            // 3秒后自动消失
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 3000);
+        }
+
+        // 全选/取消全选打印复选框
+        function toggleAllPrintCheckboxes() {
+            const checkboxes = document.querySelectorAll('.print-checkbox');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            
+            checkboxes.forEach(cb => {
+                cb.checked = !allChecked;
+            });
+        }
+
+        // 删除重复订单
+        async function deleteDuplicateOrders(orderIds) {
+            if (!confirm(`确定要删除这 ${orderIds.length} 个重复订单吗？\n订单号: ${orderIds.join(', ')}`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/duplicates', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        order_ids: orderIds
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // 显示成功消息
+                    document.getElementById('uploadResult').innerHTML = `
+                        <div class="success-message">
+                            <i class="bi bi-check-circle"></i> 
+                            <strong>删除成功！</strong> ${data.message}
+                            <br>
+                            <small>现在可以重新上传Excel文件了</small>
+                        </div>
+                    `;
+                    
+                    // 刷新订单列表
+                    loadAllOrders();
+                } else {
+                    showUploadError(data.error || '删除重复订单失败');
+                }
+            } catch (error) {
+                console.error('删除重复订单错误:', error);
+                showUploadError('网络错误，无法删除重复订单');
+            }
+        }
+
+        // 分享订单
+        function shareOrder(orderId) {
+            // 获取当前订单的URL
+            const currentUrl = new URL(window.location);
+            currentUrl.searchParams.set('order_id', orderId);
+            const shareUrl = currentUrl.toString();
+            
+            // 检查是否支持Web Share API（主要在移动端）
+            if (navigator.share) {
+                navigator.share({
+                    title: `订单 ${orderId} 详情`,
+                    text: `查看订单 ${orderId} 的详细信息`,
+                    url: shareUrl
+                }).then(() => {
+                    showTemporaryMessage('✅ 分享成功！', 'success');
+                }).catch((error) => {
+                    console.log('分享失败:', error);
+                    // 如果分享失败，回退到复制链接
+                    copyToClipboard(shareUrl, orderId);
+                });
+            } else {
+                // 不支持Web Share API时，复制链接到剪贴板
+                copyToClipboard(shareUrl, orderId);
+            }
+        }
+
+        // 复制链接到剪贴板
+        function copyToClipboard(text, orderId) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showTemporaryMessage(`✅ 订单 ${orderId} 的链接已复制到剪贴板！`, 'success');
+                }).catch((error) => {
+                    console.error('复制失败:', error);
+                    fallbackCopyToClipboard(text, orderId);
+                });
+            } else {
+                fallbackCopyToClipboard(text, orderId);
+            }
+        }
+
+        // 回退的复制方法
+        function fallbackCopyToClipboard(text, orderId) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showTemporaryMessage(`✅ 订单 ${orderId} 的链接已复制！`, 'success');
+                } else {
+                    showManualCopyDialog(text, orderId);
+                }
+            } catch (err) {
+                console.error('复制失败:', err);
+                showManualCopyDialog(text, orderId);
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+        // 显示手动复制对话框
+        function showManualCopyDialog(text, orderId) {
+            const modal = document.createElement('div');
+            modal.className = 'modal fade show';
+            modal.style.display = 'block';
+            modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-share"></i> 分享订单 ${orderId}
+                            </h5>
+                            <button type="button" class="btn-close" onclick="this.closest('.modal').remove()"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="mb-2">请复制以下链接分享给他人：</p>
+                            <div class="input-group">
+                                <input type="text" class="form-control" value="${text}" id="shareUrlInput" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="selectShareUrl()">
+                                    <i class="bi bi-clipboard"></i> 选择
+                                </button>
+                            </div>
+                            <div class="mt-3 text-muted small">
+                                <i class="bi bi-info-circle"></i> 
+                                其他人打开此链接即可查看订单详情
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').remove()">关闭</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // 自动选中文本
+            setTimeout(() => {
+                const input = document.getElementById('shareUrlInput');
+                if (input) {
+                    input.select();
+                    input.focus();
+                }
+            }, 100);
+        }
+
+        // 选中分享URL
+        function selectShareUrl() {
+            const input = document.getElementById('shareUrlInput');
+            if (input) {
+                input.select();
+                input.focus();
+                showTemporaryMessage('📋 链接已选中，可按 Ctrl+C 复制', 'info');
+            }
+        }
+
+    </script>
+</body>
+</html> 

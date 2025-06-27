@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单二维码打印</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        /* 打印样式 */
+        @media print {
+            body {
+                background: white !important;
+                font-size: 12pt;
+            }
+            
+            .no-print {
+                display: none !important;
+            }
+            
+            .print-container {
+                margin: 0;
+                padding: 0;
+                background: white;
+            }
+            
+            .print-item {
+                page-break-inside: avoid;
+                margin: 0;
+                padding: 15pt;
+                border: 1pt solid #000;
+                background: white;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            
+            .print-item:not(:last-child) {
+                page-break-after: always;
+            }
+            
+            .qr-image {
+                max-width: 80pt !important;
+                max-height: 80pt !important;
+            }
+            
+            h1, h2, h3, h4, h5, h6 {
+                color: black !important;
+            }
+            
+            .text-muted {
+                color: #666 !important;
+            }
+        }
+        
+        /* 屏幕显示样式 */
+        .print-container {
+            max-width: 800px;
+            margin: 20px auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .print-item {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px;
+            background: white;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .qr-container {
+            flex: 0 0 120px;
+            text-align: center;
+        }
+        
+        .qr-image {
+            width: 100px;
+            height: 100px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .order-info {
+            flex: 1;
+        }
+        
+        .order-id {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        
+        .info-row {
+            margin-bottom: 5px;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: #495057;
+            display: inline-block;
+            width: 80px;
+        }
+        
+        .info-value {
+            color: #212529;
+        }
+        
+        .amount {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .product-details {
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        
+        .toolbar {
+            background: #343a40;
+            color: white;
+            padding: 15px;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .btn-print {
+            background: #28a745;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .btn-print:hover {
+            background: #218838;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="print-container">
+        <!-- 工具栏 -->
+        <div class="toolbar no-print">
+            <div>
+                <h5 class="mb-0">
+                    <i class="bi bi-printer"></i> 订单二维码打印预览
+                </h5>
+                <small class="text-muted">共 <span id="orderCount">0</span> 个订单</small>
+            </div>
+            <div>
+                <button class="btn-print" onclick="window.print()">
+                    <i class="bi bi-printer"></i> 打印
+                </button>
+                <button class="btn btn-secondary btn-sm ms-2" onclick="window.close()">
+                    <i class="bi bi-x"></i> 关闭
+                </button>
+            </div>
+        </div>
+        
+        <!-- 打印内容区域 -->
+        <div id="printContent">
+            <div class="loading">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+                <p class="mt-2">正在加载订单数据...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 从URL参数获取订单ID列表
+        function getOrderIds() {
+            const params = new URLSearchParams(window.location.search);
+            return params.getAll('order_id');
+        }
+        
+        // 加载订单数据
+        async function loadOrders() {
+            const orderIds = getOrderIds();
+            
+            if (orderIds.length === 0) {
+                showError('没有指定要打印的订单');
+                return;
+            }
+            
+            document.getElementById('orderCount').textContent = orderIds.length;
+            
+            try {
+                const orders = [];
+                
+                // 逐个获取订单详情
+                for (const orderId of orderIds) {
+                    const response = await fetch(`/order?order_id=${encodeURIComponent(orderId)}`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        orders.push(data.data);
+                    } else {
+                        console.error(`获取订单 ${orderId} 失败:`, data.message);
+                    }
+                }
+                
+                if (orders.length === 0) {
+                    showError('没有找到有效的订单数据');
+                    return;
+                }
+                
+                // 显示订单打印内容
+                displayOrders(orders);
+                
+            } catch (error) {
+                console.error('加载订单数据出错:', error);
+                showError('加载订单数据时发生错误：' + error.message);
+            }
+        }
+        
+        // 显示订单列表
+        function displayOrders(orders) {
+            const printContent = document.getElementById('printContent');
+            
+            let html = '';
+            orders.forEach((order, index) => {
+                html += `
+                    <div class="print-item">
+                        <div class="qr-container">
+                            <img src="/qrcode/${order.order_id}" 
+                                 class="qr-image" 
+                                 alt="订单二维码"
+                                 onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2Y4ZjlmYSIvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNmM3NTdkIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+5LqM57u057CB5LiN5Y+v55SoPC90ZXh0Pjwvc3ZnPg==';">
+                            <div class="small text-muted mt-1">订单二维码</div>
+                        </div>
+                        
+                        <div class="order-info">
+                            <div class="order-id">${order.order_id}</div>
+                            
+                            <div class="info-row">
+                                <span class="info-label">客户：</span>
+                                <span class="info-value">${order.customer_name}</span>
+                            </div>
+                            
+                            <div class="info-row">
+                                <span class="info-label">日期：</span>
+                                <span class="info-value">${order.order_date}</span>
+                            </div>
+                            
+                            <div class="info-row">
+                                <span class="info-label">金额：</span>
+                                <span class="info-value amount">¥${parseFloat(order.amount).toFixed(2)}</span>
+                            </div>
+                            
+                            <div class="product-details">
+                                <strong>产品详情：</strong>${order.product_details}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            printContent.innerHTML = html;
+        }
+        
+        // 显示错误信息
+        function showError(message) {
+            const printContent = document.getElementById('printContent');
+            printContent.innerHTML = `
+                <div class="error">
+                    <i class="bi bi-exclamation-triangle" style="font-size: 2rem;"></i>
+                    <h4 class="mt-3">出现错误</h4>
+                    <p>${message}</p>
+                    <button class="btn btn-secondary" onclick="window.close()">关闭窗口</button>
+                </div>
+            `;
+        }
+        
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            loadOrders();
+        });
+    </script>
+</body>
+</html> 
