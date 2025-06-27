@@ -1,0 +1,88 @@
+订单二维码系统 - 故障排除指南
+
+🔧 问题：依赖包安装失败（HTTP 403错误）
+
+❌ 错误表现：
+- pip install 出现HTTP 403或超时错误
+- 无法从PyPI镜像源下载包
+- 提示"Could not install requirement"
+
+✅ 解决方案（按优先级排序）：
+
+方案一：使用专门的安装脚本
+1. 双击运行"安装依赖.bat"文件
+2. 脚本会自动尝试多个镜像源
+
+方案二：手动更换镜像源
+打开命令行，逐个尝试以下命令：
+
+# 阿里云镜像
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+
+# 豆瓣镜像
+pip install -r requirements.txt -i https://pypi.douban.com/simple/ --trusted-host pypi.douban.com
+
+# 腾讯云镜像
+pip install -r requirements.txt -i https://mirrors.cloud.tencent.com/pypi/simple/ --trusted-host mirrors.cloud.tencent.com
+
+方案三：逐个安装包
+如果批量安装失败，可以逐个安装：
+
+pip install pandas -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+pip install qrcode[pil] -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+pip install Flask -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+pip install openpyxl -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+pip install flask-cors -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+
+方案四：配置永久镜像源
+创建pip配置文件，永久使用国内镜像：
+
+Windows用户：
+1. 创建目录：%APPDATA%\pip\
+2. 创建文件：pip.ini
+3. 文件内容：
+[global]
+index-url = https://mirrors.aliyun.com/pypi/simple/
+trusted-host = mirrors.aliyun.com
+
+Linux/Mac用户：
+1. 创建目录：~/.pip/
+2. 创建文件：pip.conf
+3. 内容同上
+
+🌐 网络问题排查：
+
+1. 检查网络连接
+- 确认能正常访问互联网
+- 尝试访问 https://pypi.org 查看是否能打开
+
+2. 关闭代理/VPN
+- 暂时关闭VPN软件
+- 关闭系统代理设置
+
+3. 防火墙设置
+- 暂时关闭防火墙
+- 将Python和pip添加到防火墙白名单
+
+4. DNS设置
+- 尝试更换DNS为：8.8.8.8 或 114.114.114.114
+
+🎯 最简单的解决方式：
+
+如果以上都不行，可以：
+1. 下载离线安装包
+2. 使用conda替代pip：
+   conda install pandas flask openpyxl
+   pip install qrcode flask-cors
+
+📞 获得帮助：
+如果仍然无法解决，请提供以下信息寻求帮助：
+- Python版本：python --version
+- pip版本：pip --version
+- 网络环境（公司/家庭/学校）
+- 完整错误信息截图
+
+💡 小贴士：
+- 学校或公司网络可能有限制，建议使用手机热点尝试
+- 某些地区访问国外网站较慢，建议使用国内镜像源
+- 如果只是临时使用，可以先跳过安装，直接使用在线版本 
