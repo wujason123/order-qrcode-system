@@ -4,9 +4,11 @@
 订单查询Flask后端服务
 """
 
-from flask import Flask, request, jsonify, render_template, send_from_directory, redirect, url_for, flash
+from flask import Flask, request, jsonify, render_template, send_from_directory, redirect, url_for, flash, session
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from werkzeug.security import check_password_hash, generate_password_hash
+from functools import wraps
 import sqlite3
 import os
 from datetime import datetime
@@ -14,7 +16,13 @@ from excel_processor import OrderProcessor
 
 app = Flask(__name__)
 CORS(app)  # 允许跨域请求
-app.secret_key = 'your-secret-key-change-in-production'  # 用于flash消息
+app.secret_key = 'order-qrcode-system-secret-key-2024'  # 用于session和flash消息
+
+# 用户配置 - 可以从环境变量或配置文件读取
+USERS = {
+    'admin': generate_password_hash('admin123'),  # 默认管理员账户
+    'manager': generate_password_hash('manager123')  # 默认管理员账户
+}
 
 # 配置
 DB_FILE = "orders.db"
@@ -29,6 +37,25 @@ if not os.path.exists(UPLOAD_FOLDER):
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
+# 认证相关函数
+def login_required(f):
+    """登录验证装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session or not session['logged_in']:
+            if request.is_json:
+                return jsonify({'error': '需要登录访问', 'redirect': '/login'}), 401
+            flash('请先登录才能访问此页面', 'error')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def authenticate_user(username, password):
+    """验证用户名和密码"""
+    if username in USERS:
+        return check_password_hash(USERS[username], password)
+    return False
+
 def allowed_file(filename):
     """检查文件扩展名是否允许"""
     return '.' in filename and \
@@ -40,10 +67,51 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row  # 使返回结果可以像字典一样访问
     return conn
 
+# 认证相关路由
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """用户登录"""
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if username and password:
+            if authenticate_user(username, password):
+                session['logged_in'] = True
+                session['username'] = username
+                flash(f'欢迎回来，{username}！', 'success')
+                
+                # 获取登录前要访问的页面
+                next_page = request.args.get('next')
+                if next_page:
+                    return redirect(next_page)
+                return redirect(url_for('index'))
+            else:
+                flash('用户名或密码错误', 'error')
+        else:
+            flash('请输入用户名和密码', 'error')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """用户登出"""
+    username = session.get('username', '用户')
+    session.clear()
+    flash(f'再见，{username}！', 'info')
+    return redirect(url_for('login'))
+
 @app.route('/')
 def index():
-    """主页"""
+    """主页 - 重定向到登录页面"""
+    if 'logged_in' not in session or not session['logged_in']:
+        return redirect(url_for('login'))
     return render_template('index.html')
+
+@app.route('/public')
+def public_query():
+    """公共查询页面 - 无需登录，只能查询订单"""
+    return render_template('public.html')
 
 @app.route('/print')
 def print_page():
@@ -103,6 +171,7 @@ def get_order():
         }), 500
 
 @app.route('/orders')
+@login_required
 def list_orders():
     """获取所有订单列表（管理用）"""
     try:
@@ -162,6 +231,7 @@ def health_check():
     })
 
 @app.route('/upload', methods=['POST'])
+@login_required
 def upload_file():
     """上传Excel文件并处理"""
     try:
@@ -231,6 +301,7 @@ def upload_file():
         return jsonify({'error': f'上传处理失败: {str(e)}'}), 500
 
 @app.route('/api/orders')
+@login_required
 def get_all_orders():
     """获取所有订单列表API"""
     try:
@@ -290,6 +361,7 @@ def get_qr_codes():
         return jsonify({'error': f'获取二维码列表失败: {str(e)}'}), 500
 
 @app.route('/api/duplicates', methods=['DELETE'])
+@login_required
 def delete_duplicate_orders():
     """删除指定的重复订单"""
     try:
@@ -361,6 +433,7 @@ def download_template():
         return jsonify({'error': f'下载模板失败: {str(e)}'}), 500
 
 @app.route('/export/qrcodes')
+@login_required
 def export_qrcodes_excel():
     """导出带二维码的Excel文件用于打印"""
     try:

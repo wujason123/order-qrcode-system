@@ -248,8 +248,8 @@ class OrderProcessor:
             
             for order in orders:
                 order_id = order[0]
-                # 生成查询URL
-                url = f"{self.base_url}/order?order_id={order_id}"
+                # 生成查询URL - 指向公共查询页面
+                url = f"{self.base_url}/public?order_id={order_id}"
                 
                 # 创建二维码
                 qr = qrcode.QRCode(
@@ -296,8 +296,8 @@ class OrderProcessor:
             for order in orders:
                 order_id = order[0]
                 try:
-                    # 生成查询URL
-                    url = f"{self.base_url}/order?order_id={order_id}"
+                    # 生成查询URL - 指向公共查询页面
+                    url = f"{self.base_url}/public?order_id={order_id}"
                     
                     # 创建二维码
                     qr = qrcode.QRCode(

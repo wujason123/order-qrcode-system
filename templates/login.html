@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 订单查询系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Microsoft YaHei', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .login-card {
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            border: none;
+            border-radius: 20px;
+            max-width: 450px;
+            width: 100%;
+            overflow: hidden;
+            background: white;
+        }
+        
+        .login-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 2rem 1.5rem;
+        }
+        
+        .login-body {
+            padding: 2.5rem 2rem;
+        }
+        
+        .form-control {
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 12px 15px;
+            transition: all 0.3s ease;
+            font-size: 16px;
+        }
+        
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 15px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .input-group {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+        
+        .input-group .form-control {
+            padding-left: 50px;
+        }
+        
+        .input-icon {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            z-index: 3;
+            font-size: 18px;
+        }
+        
+        .btn-login {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 12px;
+            padding: 12px 30px;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            transition: all 0.3s ease;
+            color: white;
+        }
+        
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+            color: white;
+        }
+        
+        .btn-login:focus {
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+            color: white;
+        }
+        
+        .alert {
+            border: none;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .alert-danger {
+            background: #fff5f5;
+            color: #c53030;
+            border-left: 4px solid #e53e3e;
+        }
+        
+        .alert-success {
+            background: #f0fff4;
+            color: #22543d;
+            border-left: 4px solid #38a169;
+        }
+        
+        .alert-info {
+            background: #ebf8ff;
+            color: #1e4a72;
+            border-left: 4px solid #3182ce;
+        }
+        
+        .login-footer {
+            text-align: center;
+            padding: 1.5rem;
+            background: #f8f9fa;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        
+        .system-logo {
+            font-size: 3rem;
+            margin-bottom: 10px;
+        }
+        
+        .login-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .login-subtitle {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        /* 动画效果 */
+        .login-card {
+            animation: slideInUp 0.6s ease-out;
+        }
+        
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* 移动端适配 */
+        @media (max-width: 576px) {
+            .login-body {
+                padding: 2rem 1.5rem;
+            }
+            
+            .login-header {
+                padding: 1.5rem 1rem;
+            }
+            
+            .system-logo {
+                font-size: 2.5rem;
+            }
+            
+            .login-title {
+                font-size: 1.3rem;
+            }
+        }
+        
+
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <!-- 登录头部 -->
+        <div class="login-header">
+            <div class="system-logo">
+                <i class="bi bi-shield-lock"></i>
+            </div>
+            <div class="login-title">系统登录</div>
+            <div class="login-subtitle">订单查询系统管理后台</div>
+        </div>
+        
+        <!-- 登录表单 -->
+        <div class="login-body">
+            <!-- Flash消息显示 -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {% if category == 'error' %}
+                                <i class="bi bi-exclamation-triangle"></i>
+                            {% elif category == 'success' %}
+                                <i class="bi bi-check-circle"></i>
+                            {% elif category == 'info' %}
+                                <i class="bi bi-info-circle"></i>
+                            {% endif %}
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST" action="{{ url_for('login') }}">
+                <!-- 用户名输入 -->
+                <div class="input-group">
+                    <i class="bi bi-person input-icon"></i>
+                    <input type="text" class="form-control" name="username" id="username" 
+                           placeholder="请输入用户名" required autofocus>
+                </div>
+                
+                <!-- 密码输入 -->
+                <div class="input-group">
+                    <i class="bi bi-lock input-icon"></i>
+                    <input type="password" class="form-control" name="password" id="password" 
+                           placeholder="请输入密码" required>
+                </div>
+                
+                <!-- 登录按钮 -->
+                <button type="submit" class="btn btn-login">
+                    <i class="bi bi-box-arrow-in-right"></i> 登录
+                </button>
+            </form>
+            
+
+        </div>
+        
+        <!-- 登录页脚 -->
+        <div class="login-footer">
+            <i class="bi bi-qr-code"></i> 订单二维码查询系统 v1.0.0<br>
+            <small>安全登录 · 数据保护</small>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 表单验证和交互效果
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.querySelector('form');
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            
+            // 回车键提交表单
+            [usernameInput, passwordInput].forEach(input => {
+                input.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        form.submit();
+                    }
+                });
+            });
+            
+            // 输入框焦点效果
+            [usernameInput, passwordInput].forEach(input => {
+                input.addEventListener('focus', function() {
+                    this.parentElement.querySelector('.input-icon').style.color = '#667eea';
+                });
+                
+                input.addEventListener('blur', function() {
+                    this.parentElement.querySelector('.input-icon').style.color = '#6c757d';
+                });
+            });
+            
+            // 自动关闭提示消息
+            setTimeout(function() {
+                const alerts = document.querySelectorAll('.alert');
+                alerts.forEach(alert => {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                });
+            }, 5000);
+        });
+    </script>
+</body>
+</html> 

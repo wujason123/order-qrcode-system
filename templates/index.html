@@ -201,13 +201,33 @@
     <div class="container mt-4">
         <!-- 页面标题 -->
         <div class="text-center mb-4">
-            <h1 class="text-white mb-3">
-                <i class="bi bi-qr-code"></i> 订单查询系统
-            </h1>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div></div> <!-- 占位元素 -->
+                <h1 class="text-white mb-0">
+                    <i class="bi bi-qr-code"></i> 订单查询系统
+                </h1>
+                <!-- 用户信息和登出按钮 -->
+                {% if session.logged_in %}
+                <div class="dropdown">
+                    <button class="btn btn-light btn-sm dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle"></i> {{ session.username }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><span class="dropdown-item-text"><i class="bi bi-info-circle"></i> 管理员身份</span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> 退出登录</a></li>
+                    </ul>
+                </div>
+                {% else %}
+                <a href="{{ url_for('login') }}" class="btn btn-light btn-sm">
+                    <i class="bi bi-box-arrow-in-right"></i> 登录
+                </a>
+                {% endif %}
+            </div>
             <p class="text-white-50">扫描二维码或输入订单号查询订单详情</p>
         </div>
 
-        <!-- Excel文件上传区域 -->
+        <!-- Excel文件上传区域 - 仅管理员可见 -->
         <div class="card mb-4">
             <div class="card-header">
                 <h5 class="mb-0">
@@ -311,7 +331,7 @@
         <!-- 订单详情显示区域 -->
         <div id="orderResult" style="display: none;"></div>
 
-        <!-- 所有订单列表 -->
+        <!-- 所有订单列表 - 仅管理员可见 -->
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
