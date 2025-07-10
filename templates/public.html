@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单查询系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        
+        .card {
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border: none;
+            border-radius: 15px;
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 1.5rem;
+        }
+        
+        .search-box {
+            position: relative;
+        }
+        
+        .search-box .form-control {
+            padding-left: 3rem;
+            border-radius: 25px;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        
+        .search-box .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 0.75rem 2rem;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* 移动端优化样式 */
+        @media (max-width: 768px) {
+            .card-body .table {
+                font-size: 14px;
+            }
+            
+            .card-header h4 {
+                font-size: 1.3rem;
+            }
+            
+            .table td {
+                padding: 12px 8px !important;
+                word-break: break-word;
+            }
+            
+            .table td:first-child {
+                width: 30% !important;
+                font-size: 13px;
+            }
+            
+            .table td:last-child {
+                font-size: 16px;
+            }
+            
+            .btn-group .btn {
+                font-size: 12px;
+                padding: 6px 12px;
+            }
+        }
+        
+        /* Excel表格样式增强 */
+        .excel-table {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        
+        .excel-table td {
+            position: relative;
+        }
+        
+        .excel-table .table-active {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%) !important;
+        }
+        
+        /* 订单详情页面专用样式 */
+        .order-details-card {
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        
+        .order-details-card .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 20px;
+        }
+        
+        /* 表格行悬停效果 */
+        .excel-table tbody tr:hover {
+            background-color: rgba(102, 126, 234, 0.05);
+        }
+        
+        /* 操作按钮优化 */
+        .action-buttons .btn {
+            margin: 0 5px;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .action-buttons .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .error-message {
+            background: #ffe6e6;
+            border: 1px solid #ff9999;
+            color: #cc0000;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+
+        .text-purple {
+            color: #6f42c1 !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <!-- 页面标题 -->
+        <div class="text-center mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div></div> <!-- 占位元素 -->
+                <h1 class="text-white mb-0">
+                    <i class="bi bi-qr-code"></i> 订单查询系统
+                </h1>
+                <!-- 登录按钮 -->
+                <a href="{{ url_for('login') }}" class="btn btn-light btn-sm">
+                    <i class="bi bi-box-arrow-in-right"></i> 管理员登录
+                </a>
+            </div>
+            <p class="text-white-50">扫描二维码或输入订单号查询订单详情</p>
+        </div>
+
+        <!-- 使用说明区域 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-info-circle"></i> 使用说明
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 text-center mb-3">
+                        <div class="p-3">
+                            <i class="bi bi-qr-code text-success" style="font-size: 2rem;"></i>
+                            <h6 class="mt-2">扫描二维码</h6>
+                            <p class="small text-muted">用手机扫描订单二维码自动查看详情</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-center mb-3">
+                        <div class="p-3">
+                            <i class="bi bi-search text-info" style="font-size: 2rem;"></i>
+                            <h6 class="mt-2">手动查询</h6>
+                            <p class="small text-muted">在下方输入框输入订单号查询</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-lightbulb"></i> 
+                    <strong>提示：</strong>手机扫描二维码后会自动打开浏览器显示订单详情
+                </div>
+            </div>
+        </div>
+
+        <!-- 手动查询区域 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-search"></i> 查询订单
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="search-box">
+                    <i class="bi bi-search search-icon"></i>
+                    <input type="text" class="form-control" id="searchOrderId" 
+                           placeholder="请输入订单号（例如：ORD001）">
+                </div>
+                <div class="text-center mt-3">
+                    <button class="btn btn-primary" onclick="searchOrder()">
+                        <i class="bi bi-search"></i> 查询订单
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 订单详情显示区域 -->
+        <div id="orderResult" style="display: none;"></div>
+
+        <!-- 页脚 -->
+        <div class="text-center mt-4 text-white-50">
+            <p><i class="bi bi-info-circle"></i> 订单二维码查询系统 v1.0.0</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 页面加载时检查URL参数
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检查URL参数是否有订单号
+            const urlParams = new URLSearchParams(window.location.search);
+            const orderId = urlParams.get('order_id');
+            if (orderId) {
+                document.getElementById('searchOrderId').value = orderId;
+                searchOrder();
+            }
+            
+            // 回车键搜索
+            document.getElementById('searchOrderId').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchOrder();
+                }
+            });
+        });
+
+        // 搜索指定订单
+        async function searchOrder() {
+            const orderId = document.getElementById('searchOrderId').value.trim();
+            if (!orderId) {
+                showError('请输入订单号');
+                return;
+            }
+
+            const resultDiv = document.getElementById('orderResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="loading text-center py-4">
+                            <div class="spinner-border spinner-border-lg text-primary" role="status"></div>
+                            <p class="mt-3 text-muted">正在查询订单 ${orderId}...</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch(`/order?order_id=${encodeURIComponent(orderId)}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    displayOrderDetails(data.data);
+                } else {
+                    showError(data.message || '查询失败');
+                }
+            } catch (error) {
+                console.error('查询错误:', error);
+                showError('网络错误，请检查连接');
+            }
+        }
+
+        // 显示订单详情
+        function displayOrderDetails(order) {
+            const resultDiv = document.getElementById('orderResult');
+            resultDiv.innerHTML = `
+                <div class="card order-details-card">
+                    <div class="card-header text-center">
+                        <h4 class="mb-0">
+                            <i class="bi bi-receipt"></i> 订单查询结果
+                        </h4>
+                    </div>
+                    <div class="card-body p-0">
+                        <!-- Excel表格样式显示 -->
+                        <div class="table-responsive">
+                            <table class="table table-bordered excel-table mb-0" style="font-size: 16px;">
+                                <tbody>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="width: 30%; background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-tag text-primary"></i><br>
+                                            <small>订单号</small>
+                                        </td>
+                                        <td class="text-center fw-bold" style="font-family: 'Courier New', monospace; font-size: 20px; color: #0066cc; border: 2px solid #dee2e6; background: #fff; vertical-align: middle;">
+                                            ${order.order_id}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-person text-success"></i><br>
+                                            <small>客户姓名</small>
+                                        </td>
+                                        <td class="text-center" style="font-size: 18px; color: #333; border: 2px solid #dee2e6; background: #fff; vertical-align: middle; font-weight: 500;">
+                                            ${order.customer_name}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-calendar text-info"></i><br>
+                                            <small>订单日期</small>
+                                        </td>
+                                        <td class="text-center" style="font-size: 18px; color: #333; border: 2px solid #dee2e6; background: #fff; vertical-align: middle; font-weight: 500;">
+                                            ${order.order_date}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-currency-yen text-warning"></i><br>
+                                            <small>订单金额</small>
+                                        </td>
+                                        <td class="text-center fw-bold" style="font-size: 20px; color: #e74c3c; border: 2px solid #dee2e6; background: #fff; vertical-align: middle;">
+                                            ¥${parseFloat(order.amount).toFixed(2)}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-active fw-bold text-center" style="background-color: #f8f9fa; border: 2px solid #dee2e6; vertical-align: middle;">
+                                            <i class="bi bi-box text-purple"></i><br>
+                                            <small>产品详情</small>
+                                        </td>
+                                        <td class="text-center" style="font-size: 16px; color: #333; border: 2px solid #dee2e6; background: #fff; vertical-align: middle; padding: 15px;">
+                                            ${order.product_details}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- 操作按钮 -->
+                        <div class="text-center p-4 action-buttons">
+                            <div class="d-flex flex-wrap justify-content-center gap-2">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="shareOrder()">
+                                    <i class="bi bi-share"></i> 分享订单
+                                </button>
+                                <button type="button" class="btn btn-success btn-sm" onclick="copyOrderLink()">
+                                    <i class="bi bi-clipboard"></i> 复制链接
+                                </button>
+                                <button type="button" class="btn btn-info btn-sm" onclick="searchOrder()">
+                                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 滚动到结果区域
+            resultDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            const resultDiv = document.getElementById('orderResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="error-message text-center">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <strong>查询失败</strong><br>
+                            ${message}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 分享订单功能
+        async function shareOrder() {
+            const orderId = document.getElementById('searchOrderId').value.trim();
+            if (!orderId) return;
+
+            const shareUrl = `${window.location.origin}/public?order_id=${orderId}`;
+            
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: `订单 ${orderId} 详情`,
+                        text: `查看订单 ${orderId} 的详细信息`,
+                        url: shareUrl
+                    });
+                } catch (err) {
+                    console.log('分享取消或失败');
+                    copyToClipboard(shareUrl);
+                }
+            } else {
+                copyToClipboard(shareUrl);
+            }
+        }
+
+        // 复制订单链接
+        function copyOrderLink() {
+            const orderId = document.getElementById('searchOrderId').value.trim();
+            if (!orderId) return;
+
+            const shareUrl = `${window.location.origin}/public?order_id=${orderId}`;
+            copyToClipboard(shareUrl);
+        }
+
+        // 复制到剪贴板功能
+        function copyToClipboard(text) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    alert('链接已复制到剪贴板！');
+                });
+            } else {
+                // 兼容老版本浏览器
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('链接已复制到剪贴板！');
+            }
+        }
+    </script>
+</body>
+</html>
+ 
