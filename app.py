@@ -845,15 +845,14 @@ def get_profit_analysis():
 @app.route('/api/inventory_summary')
 @login_required
 def get_inventory_summary():
-    """获取库存汇总信息API"""
+    """获取库存汇总信息"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 获取所有库存物料
+        # 获取所有库存物料信息
         cursor.execute('''
             SELECT 
-                id,
                 item_code,
                 item_name,
                 item_category,
@@ -862,56 +861,42 @@ def get_inventory_summary():
                 weighted_avg_price,
                 total_value,
                 low_stock_threshold,
-                warning_stock_threshold,
-                last_updated
+                warning_stock_threshold
             FROM inventory_items
             ORDER BY item_category, item_code
         ''')
         
-        items = cursor.fetchall()
-        conn.close()
-        
-        if not items:
-            return jsonify({
-                'success': True,
-                'total_items': 0,
-                'total_stock': 0,
-                'total_value': 0,
-                'items': []
-            })
-        
-        # 处理数据
-        items_list = []
-        total_value = 0
+        items = []
+        total_items = 0
         total_stock = 0
-        categories = set()
+        total_value = 0
         
-        for item in items:
-            item_data = {
-                'id': item['id'],
-                'item_code': item['item_code'],
-                'item_name': item['item_name'],
-                'item_category': item['item_category'],
-                'unit': item['unit'],
-                'current_stock': float(item['current_stock']),
-                'weighted_avg_price': float(item['weighted_avg_price']),
-                'total_value': float(item['total_value']),
-                'low_stock_threshold': int(item['low_stock_threshold']),
-                'warning_stock_threshold': int(item['warning_stock_threshold']),
-                'last_updated': item['last_updated']
+        for row in cursor.fetchall():
+            item = {
+                'item_code': row['item_code'],
+                'item_name': row['item_name'],
+                'item_category': row['item_category'],
+                'unit': row['unit'],
+                'current_stock': float(row['current_stock']),
+                'weighted_avg_price': float(row['weighted_avg_price']),
+                'total_value': float(row['total_value']),
+                'low_stock_threshold': int(row['low_stock_threshold']),
+                'warning_stock_threshold': int(row['warning_stock_threshold'])
             }
+            items.append(item)
             
-            items_list.append(item_data)
-            total_value += item_data['total_value']
-            total_stock += item_data['current_stock']
-            categories.add(item_data['item_category'])
+            total_items += 1
+            total_stock += item['current_stock']
+            total_value += item['total_value']
+        
+        conn.close()
         
         return jsonify({
             'success': True,
-            'total_items': len(categories),
+            'items': items,
+            'total_items': total_items,
             'total_stock': int(total_stock),
-            'total_value': round(total_value, 2),
-            'items': items_list
+            'total_value': total_value
         })
         
     except Exception as e:
@@ -2203,22 +2188,22 @@ def init_app():
         os.makedirs('uploads', exist_ok=True)
         os.makedirs('qrcodes', exist_ok=True)
         
-        # 删除旧的数据库文件（如果存在）
-        if os.path.exists('orders.db'):
-            os.remove('orders.db')
-            print("✅ 已删除旧的数据库文件")
-        
-        # 初始化数据库
-        processor = OrderProcessor()
-        if processor.init_database():
-            print("✅ 数据库表创建成功")
-            # 初始化示例数据
-            if processor.init_sample_data():
-                print("✅ 示例数据初始化成功")
+        # 初始化数据库（如果不存在）
+        if not os.path.exists('orders.db'):
+            print("📦 首次运行，创建新的数据库...")
+            # 初始化数据库
+            processor = OrderProcessor()
+            if processor.init_database():
+                print("✅ 数据库表创建成功")
+                # 初始化示例数据
+                if processor.init_sample_data():
+                    print("✅ 示例数据初始化成功")
+                else:
+                    print("❌ 示例数据初始化失败")
             else:
-                print("❌ 示例数据初始化失败")
+                print("❌ 数据库初始化失败")
         else:
-            print("❌ 数据库初始化失败")
+            print("✅ 数据库已存在，跳过初始化")
         
         print("✅ 应用初始化完成")
     except Exception as e:
@@ -2352,6 +2337,105 @@ def update_product_stock():
             
     except Exception as e:
         print(f"❌ 更新产品库存失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/update_thresholds', methods=['POST'])
+@login_required
+def update_thresholds():
+    """更新物料的库存阈值"""
+    try:
+        data = request.get_json()
+        if not data or 'item_code' not in data:
+            return jsonify({'error': '缺少物料编码'}), 400
+            
+        item_code = data['item_code']
+        low_threshold = int(data.get('low_stock_threshold', 0))
+        warning_threshold = int(data.get('warning_stock_threshold', 0))
+        
+        if warning_threshold < low_threshold:
+            return jsonify({'error': '警告阈值必须大于低库存阈值'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 更新阈值
+        cursor.execute('''
+            UPDATE inventory_items 
+            SET low_stock_threshold = ?,
+                warning_stock_threshold = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE item_code = ?
+        ''', (low_threshold, warning_threshold, item_code))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'error': '物料不存在'}), 404
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': '阈值设置已更新'
+        })
+        
+    except Exception as e:
+        print(f"❌ 更新库存阈值失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/update_inventory_item', methods=['POST'])
+@login_required
+def update_inventory_item():
+    """更新物料基本信息"""
+    try:
+        data = request.get_json()
+        if not data or 'item_code' not in data:
+            return jsonify({'error': '缺少物料编码'}), 400
+            
+        item_code = data['item_code']
+        item_name = data.get('item_name', '').strip()
+        unit = data.get('unit', '').strip()
+        category = data.get('item_category', '').strip()
+        
+        if not item_name or not unit or not category:
+            return jsonify({'error': '物料名称、单位和分类不能为空'}), 400
+        
+        if category not in ['原材料', '包装', '配件', '产品']:
+            return jsonify({'error': '无效的物料分类'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 更新物料信息
+        cursor.execute('''
+            UPDATE inventory_items 
+            SET item_name = ?,
+                unit = ?,
+                item_category = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE item_code = ?
+        ''', (item_name, unit, category, item_code))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'error': '物料不存在'}), 404
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': '物料信息已更新'
+        })
+        
+    except Exception as e:
+        print(f"❌ 更新物料信息失败: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)

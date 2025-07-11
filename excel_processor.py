@@ -95,20 +95,9 @@ class OrderProcessor:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
             
-            # 删除所有现有表（如果存在）
-            cursor.executescript('''
-                DROP TABLE IF EXISTS inventory_transactions;
-                DROP TABLE IF EXISTS production_costs;
-                DROP TABLE IF EXISTS bom_items;
-                DROP TABLE IF EXISTS cost_config_items;
-                DROP TABLE IF EXISTS cost_config;
-                DROP TABLE IF EXISTS orders;
-                DROP TABLE IF EXISTS inventory_items;
-            ''')
-            
             # 创建库存物料表（支持原料和产品）
             cursor.execute('''
-                CREATE TABLE inventory_items (
+                CREATE TABLE IF NOT EXISTS inventory_items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     item_code TEXT UNIQUE NOT NULL,
                     item_name TEXT NOT NULL,
@@ -125,7 +114,7 @@ class OrderProcessor:
             
             # 创建订单表
             cursor.execute('''
-                CREATE TABLE orders (
+                CREATE TABLE IF NOT EXISTS orders (
                     order_id TEXT PRIMARY KEY,
                     customer_name TEXT NOT NULL,
                     order_date TEXT NOT NULL,
@@ -142,9 +131,26 @@ class OrderProcessor:
                 )
             ''')
             
+            # 创建采购记录表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS purchase_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    purchase_id TEXT UNIQUE NOT NULL,
+                    item_code TEXT NOT NULL,
+                    supplier_name TEXT NOT NULL,
+                    purchase_date TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    unit_price REAL NOT NULL,
+                    total_amount REAL NOT NULL,
+                    other_fees REAL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (item_code) REFERENCES inventory_items (item_code)
+                )
+            ''')
+            
             # 创建BOM物料清单表
             cursor.execute('''
-                CREATE TABLE bom_items (
+                CREATE TABLE IF NOT EXISTS bom_items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     product_code TEXT NOT NULL,
                     material_code TEXT NOT NULL,
@@ -159,7 +165,7 @@ class OrderProcessor:
             
             # 创建成本配置项表
             cursor.execute('''
-                CREATE TABLE cost_config_items (
+                CREATE TABLE IF NOT EXISTS cost_config_items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     item_name TEXT NOT NULL,
                     item_type TEXT NOT NULL,  -- 'fixed' or 'percentage'
@@ -174,7 +180,7 @@ class OrderProcessor:
             
             # 创建成本配置表（兼容旧版本）
             cursor.execute('''
-                CREATE TABLE cost_config (
+                CREATE TABLE IF NOT EXISTS cost_config (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     config_type TEXT UNIQUE NOT NULL,
                     config_value REAL NOT NULL,
@@ -183,10 +189,25 @@ class OrderProcessor:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
+
+            # 创建库存变动记录表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS inventory_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_code TEXT NOT NULL,
+                    transaction_type TEXT NOT NULL,  -- 'in' or 'out'
+                    quantity REAL NOT NULL,
+                    unit_price REAL,
+                    total_amount REAL,
+                    transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    notes TEXT,
+                    FOREIGN KEY (item_code) REFERENCES inventory_items (item_code)
+                )
+            ''')
+
             # 创建生产成本记录表
             cursor.execute('''
-                CREATE TABLE production_costs (
+                CREATE TABLE IF NOT EXISTS production_costs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     cost_id TEXT UNIQUE NOT NULL,
                     product_code TEXT NOT NULL,
@@ -201,21 +222,6 @@ class OrderProcessor:
                     unit_cost REAL NOT NULL,
                     calculation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (product_code) REFERENCES inventory_items (item_code)
-                )
-            ''')
-            
-            # 创建库存变动记录表
-            cursor.execute('''
-                CREATE TABLE inventory_transactions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    item_code TEXT NOT NULL,
-                    transaction_type TEXT NOT NULL,  -- 'in' or 'out'
-                    quantity REAL NOT NULL,
-                    unit_price REAL,
-                    total_amount REAL,
-                    transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    notes TEXT,
-                    FOREIGN KEY (item_code) REFERENCES inventory_items (item_code)
                 )
             ''')
             
@@ -238,25 +244,6 @@ class OrderProcessor:
                 ''', default_configs)
                 
                 print("✅ 初始化默认成本配置项完成")
-            
-            # 检查是否需要初始化默认成本配置（兼容旧版本）
-            cursor.execute('SELECT COUNT(*) FROM cost_config')
-            if cursor.fetchone()[0] == 0:
-                # 插入默认成本配置
-                default_configs = [
-                    ('labor_cost_rate', 60.0, '人工费率（元/小时）'),
-                    ('management_cost_rate', 15.0, '管理费率（占材料成本的百分比）'),
-                    ('transport_cost_rate', 5.0, '运输费率（占材料成本的百分比）'),
-                    ('overhead_cost_rate', 10.0, '间接费率（占总成本的百分比）')
-                ]
-                
-                cursor.executemany('''
-                    INSERT INTO cost_config 
-                    (config_type, config_value, description)
-                    VALUES (?, ?, ?)
-                ''', default_configs)
-                
-                print("✅ 初始化默认成本配置完成")
             
             conn.commit()
             conn.close()
@@ -373,6 +360,37 @@ class OrderProcessor:
                     # 计算销售总额
                     sale_total_amount = quantity * sale_unit_price
                     
+                    # 获取产品的BOM清单
+                    cursor.execute('''
+                        SELECT bi.material_code, bi.required_quantity, bi.unit,
+                               ii.current_stock
+                        FROM bom_items bi
+                        LEFT JOIN inventory_items ii ON bi.material_code = ii.item_code
+                        WHERE bi.product_code = ?
+                    ''', (product_code,))
+                    
+                    bom_items = cursor.fetchall()
+                    
+                    # 检查并扣减原料库存
+                    insufficient_materials = []
+                    for item in bom_items:
+                        material_code = item[0]
+                        required_qty = item[1]
+                        unit = item[2]
+                        current_stock = item[3] or 0
+                        
+                        total_required = required_qty * quantity
+                        
+                        if current_stock < total_required:
+                            insufficient_materials.append(
+                                f"{material_code}: 需要{total_required}{unit}, 库存{current_stock}{unit}"
+                            )
+                    
+                    if insufficient_materials:
+                        error_msg = f"订单 {order_id} 的原料库存不足:\n" + "\n".join(insufficient_materials)
+                        print(f"❌ {error_msg}")
+                        continue
+                    
                     # 计算产品成本
                     cost_result = self.calculate_product_cost(product_code, quantity, conn=conn)
                     
@@ -395,6 +413,26 @@ class OrderProcessor:
                             profit_status = 'break_even'
                             
                         print(f"💰 {order_id}: 销售额¥{sale_total_amount:.2f}, 成本¥{total_cost:.2f}, {'盈利' if profit > 0 else '亏损' if profit < 0 else '保本'}¥{abs(profit):.2f}")
+                        
+                        # 扣减原料库存
+                        for item in bom_items:
+                            material_code = item[0]
+                            required_qty = item[1]
+                            total_required = required_qty * quantity
+                            
+                            # 记录原料出库
+                            success = self.record_inventory_transaction(
+                                item_code=material_code,
+                                transaction_type='out',
+                                quantity=total_required,
+                                notes=f'销售订单 {order_id} 扣减',
+                                conn=conn
+                            )
+                            
+                            if not success:
+                                raise Exception(f"原料 {material_code} 出库失败")
+                            
+                            print(f"📦 原料出库: {material_code} × {total_required}")
                     else:
                         print(f"⚠️ {order_id}: 无法计算成本 - {cost_result.get('error', '未知错误')}")
                     
@@ -657,18 +695,41 @@ class OrderProcessor:
 
     def _update_inventory_item(self, cursor, item_code, item_name, category, unit):
         """更新或创建库存物品"""
+        # 检查物品是否已存在
         cursor.execute('''
-            INSERT OR IGNORE INTO inventory_items 
-            (item_code, item_name, item_category, unit)
-            VALUES (?, ?, ?, ?)
-        ''', (item_code, item_name, category, unit))
-        
-        # 如果物品已存在，更新名称和分类
-        cursor.execute('''
-            UPDATE inventory_items 
-            SET item_name = ?, item_category = ?, unit = ?, last_updated = CURRENT_TIMESTAMP
+            SELECT current_stock, weighted_avg_price, total_value, 
+                   low_stock_threshold, warning_stock_threshold
+            FROM inventory_items 
             WHERE item_code = ?
-        ''', (item_name, category, unit, item_code))
+        ''', (item_code,))
+        
+        existing = cursor.fetchone()
+        
+        if existing:
+            # 如果物品已存在，只更新名称、分类和单位，保留库存相关信息
+            cursor.execute('''
+                UPDATE inventory_items 
+                SET item_name = ?,
+                    item_category = ?,
+                    unit = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE item_code = ?
+            ''', (item_name, category, unit, item_code))
+            print(f"📝 更新物品信息: {item_code} - {item_name} ({category})")
+        else:
+            # 如果物品不存在，创建新记录
+            cursor.execute('''
+                INSERT INTO inventory_items 
+                (item_code, item_name, item_category, unit,
+                 current_stock, weighted_avg_price, total_value,
+                 low_stock_threshold, warning_stock_threshold)
+                VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?)
+            ''', (
+                item_code, item_name, category, unit,
+                100 if category != '产品' else 10,  # 默认低库存阈值
+                200 if category != '产品' else 20   # 默认警告阈值
+            ))
+            print(f"✨ 创建新物品: {item_code} - {item_name} ({category})")
 
     def _update_weighted_avg_price(self, cursor, item_code, new_quantity, new_price, other_fees=0):
         """更新库存的加权平均价格"""

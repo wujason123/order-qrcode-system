@@ -245,6 +245,61 @@
         .cost-item-management { color: var(--chart-color-management); }
         .cost-item-transport { color: var(--chart-color-transport); }
         .cost-item-other { color: var(--chart-color-other); }
+
+        .cursor-pointer {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .cursor-pointer:hover {
+            background-color: rgba(0,0,0,0.02);
+        }
+        
+        .category-toggle {
+            transition: transform 0.3s ease;
+        }
+        
+        .category-toggle.bi-chevron-up {
+            transform: rotate(-180deg);
+        }
+        
+        .collapse {
+            transition: all 0.3s ease;
+        }
+        
+        .card-header {
+            border-bottom: none;
+        }
+        
+        .collapse:not(.show) {
+            display: none;
+        }
+        
+        .collapse.show {
+            display: block;
+        }
+        
+        .table th {
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+        
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+        
+        .badge {
+            font-weight: 500;
+        }
+        
+        .text-end {
+            text-align: right !important;
+        }
+        
+        .text-center {
+            text-align: center !important;
+        }
     </style>
 </head>
 <body>
@@ -830,6 +885,79 @@
         <!-- 页脚 -->
         <div class="text-center mt-4 text-white-50">
             <p><i class="bi bi-info-circle"></i> 订单二维码查询系统 v1.0.0</p>
+        </div>
+    </div>
+
+    <!-- 阈值设置模态框 -->
+    <div class="modal fade" id="thresholdModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-sliders"></i> 设置库存阈值
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="thresholdForm">
+                        <input type="hidden" id="thresholdItemCode">
+                        <div class="mb-3">
+                            <label for="lowStockThreshold" class="form-label">低库存阈值</label>
+                            <input type="number" class="form-control" id="lowStockThreshold" required min="0">
+                            <div class="form-text">当库存低于此值时显示红色警告</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="warningStockThreshold" class="form-label">警告库存阈值</label>
+                            <input type="number" class="form-control" id="warningStockThreshold" required min="0">
+                            <div class="form-text">当库存低于此值时显示黄色警告</div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveThresholds()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 物料编辑模态框 -->
+    <div class="modal fade" id="inventoryItemModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-pencil"></i> 编辑物料信息
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="inventoryItemForm">
+                        <input type="hidden" id="editItemCode">
+                        <div class="mb-3">
+                            <label for="editItemName" class="form-label">物料名称</label>
+                            <input type="text" class="form-control" id="editItemName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editItemUnit" class="form-label">单位</label>
+                            <input type="text" class="form-control" id="editItemUnit" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editItemCategory" class="form-label">分类</label>
+                            <select class="form-control" id="editItemCategory" required>
+                                <option value="原材料">原材料</option>
+                                <option value="包装">包装</option>
+                                <option value="配件">配件</option>
+                                <option value="产品">产品</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveInventoryItem()">保存</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -2041,53 +2169,185 @@
                 if (items.length === 0) return;
                 
                 html += `
-                    <div class="mb-4">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center cursor-pointer"
+                             onclick="toggleCategoryItems('${category}')">
                             <h6 class="mb-0">
                                 <i class="bi ${info.icon} text-${info.color}"></i> 
                                 ${category}
                                 <span class="badge bg-${info.color} ms-2">${items.length}个</span>
                             </h6>
-                            <small class="text-muted">
-                                总值: ¥${items.reduce((sum, item) => sum + item.total_value, 0).toFixed(2)}
-                            </small>
+                            <div>
+                                <small class="text-muted me-3">
+                                    总值: ¥${items.reduce((sum, item) => sum + item.total_value, 0).toFixed(2)}
+                                </small>
+                                <i class="bi bi-chevron-down category-toggle" id="toggle-${category}"></i>
+                            </div>
                         </div>
-                        <div class="table-responsive">
-                            <table class="table table-hover table-sm mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>编码</th>
-                                        <th>名称</th>
-                                        <th class="text-end">库存</th>
-                                        <th class="text-end">单价</th>
-                                        <th class="text-end">总值</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${items.map(item => `
-                                        <tr>
-                                            <td><small>${item.item_code}</small></td>
-                                            <td>${item.item_name}</td>
-                                            <td class="text-end">
-                                                ${item.current_stock}
-                                                <small class="text-muted">${item.unit}</small>
-                                                ${item.current_stock <= item.low_stock_threshold ? 
-                                                    '<span class="badge bg-danger ms-1">库存不足</span>' : 
-                                                    (item.current_stock <= item.warning_stock_threshold ? 
-                                                        '<span class="badge bg-warning ms-1">库存偏低</span>' : '')}
-                                            </td>
-                                            <td class="text-end">¥${item.weighted_avg_price.toFixed(2)}</td>
-                                            <td class="text-end">¥${item.total_value.toFixed(2)}</td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
+                        <div class="collapse" id="category-${category}">
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-sm mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>编码</th>
+                                                <th>名称</th>
+                                                <th class="text-end">库存</th>
+                                                <th class="text-end">单价</th>
+                                                <th class="text-end">总值</th>
+                                                <th class="text-center">阈值设置</th>
+                                                <th class="text-center">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${items.map(item => `
+                                                <tr>
+                                                    <td><small>${item.item_code}</small></td>
+                                                    <td>${item.item_name}</td>
+                                                    <td class="text-end">
+                                                        ${item.current_stock}
+                                                        <small class="text-muted">${item.unit}</small>
+                                                        ${item.current_stock <= item.low_stock_threshold ? 
+                                                            '<span class="badge bg-danger ms-1">库存不足</span>' : 
+                                                            (item.current_stock <= item.warning_stock_threshold ? 
+                                                                '<span class="badge bg-warning ms-1">库存偏低</span>' : '')}
+                                                    </td>
+                                                    <td class="text-end">¥${item.weighted_avg_price.toFixed(2)}</td>
+                                                    <td class="text-end">¥${item.total_value.toFixed(2)}</td>
+                                                    <td class="text-center">
+                                                        <button class="btn btn-outline-primary btn-sm"
+                                                                onclick="showThresholdModal('${item.item_code}', ${item.low_stock_threshold}, ${item.warning_stock_threshold})">
+                                                            <i class="bi bi-sliders"></i> 设置阈值
+                                                        </button>
+                                                    </td>
+                                                    <td class="text-center">
+                                                        <button class="btn btn-outline-secondary btn-sm"
+                                                                onclick="editInventoryItem('${item.item_code}', '${item.item_name}', '${item.unit}', '${item.item_category}')">
+                                                            <i class="bi bi-pencil"></i> 编辑
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `;
             });
             
             container.innerHTML = html || '<div class="alert alert-info">暂无库存数据</div>';
+        }
+
+        // 展开/收缩分类
+        function toggleCategoryItems(category) {
+            const collapse = document.getElementById(`category-${category}`);
+            const toggle = document.getElementById(`toggle-${category}`);
+            
+            if (collapse.classList.contains('show')) {
+                collapse.classList.remove('show');
+                toggle.classList.remove('bi-chevron-up');
+                toggle.classList.add('bi-chevron-down');
+            } else {
+                collapse.classList.add('show');
+                toggle.classList.remove('bi-chevron-down');
+                toggle.classList.add('bi-chevron-up');
+            }
+        }
+
+        // 显示阈值设置模态框
+        function showThresholdModal(itemCode, lowThreshold, warningThreshold) {
+            document.getElementById('thresholdItemCode').value = itemCode;
+            document.getElementById('lowStockThreshold').value = lowThreshold;
+            document.getElementById('warningStockThreshold').value = warningThreshold;
+            
+            const modal = new bootstrap.Modal(document.getElementById('thresholdModal'));
+            modal.show();
+        }
+
+        // 保存阈值设置
+        async function saveThresholds() {
+            const itemCode = document.getElementById('thresholdItemCode').value;
+            const lowThreshold = parseInt(document.getElementById('lowStockThreshold').value);
+            const warningThreshold = parseInt(document.getElementById('warningStockThreshold').value);
+            
+            if (warningThreshold < lowThreshold) {
+                showAlert('danger', '警告阈值必须大于低库存阈值');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/update_thresholds', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        item_code: itemCode,
+                        low_stock_threshold: lowThreshold,
+                        warning_stock_threshold: warningThreshold
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('success', '阈值设置已更新');
+                    bootstrap.Modal.getInstance(document.getElementById('thresholdModal')).hide();
+                    loadInventorySummary(); // 刷新显示
+                } else {
+                    showAlert('danger', result.error || '更新失败');
+                }
+            } catch (error) {
+                console.error('保存阈值设置失败:', error);
+                showAlert('danger', '网络错误，保存失败');
+            }
+        }
+
+        // 显示物料编辑模态框
+        function editInventoryItem(itemCode, itemName, unit, category) {
+            document.getElementById('editItemCode').value = itemCode;
+            document.getElementById('editItemName').value = itemName;
+            document.getElementById('editItemUnit').value = unit;
+            document.getElementById('editItemCategory').value = category;
+            
+            const modal = new bootstrap.Modal(document.getElementById('inventoryItemModal'));
+            modal.show();
+        }
+
+        // 保存物料信息
+        async function saveInventoryItem() {
+            const itemCode = document.getElementById('editItemCode').value;
+            const itemName = document.getElementById('editItemName').value;
+            const unit = document.getElementById('editItemUnit').value;
+            const category = document.getElementById('editItemCategory').value;
+            
+            try {
+                const response = await fetch('/api/update_inventory_item', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        item_code: itemCode,
+                        item_name: itemName,
+                        unit: unit,
+                        item_category: category
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('success', '物料信息已更新');
+                    bootstrap.Modal.getInstance(document.getElementById('inventoryItemModal')).hide();
+                    loadInventorySummary(); // 刷新显示
+                } else {
+                    showAlert('danger', result.error || '更新失败');
+                }
+            } catch (error) {
+                console.error('保存物料信息失败:', error);
+                showAlert('danger', '网络错误，保存失败');
+            }
         }
 
         // 显示库存不足提醒
