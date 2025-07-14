@@ -46,21 +46,119 @@ def setup_system():
     if not check_dependencies():
         return False
     
-    # 处理Excel数据
-    print("\n步骤1: 处理Excel数据并生成二维码...")
+    local_ip = get_local_ip()
+    base_url = f"http://{local_ip}:5000"
+    print(f"🌐 使用IP地址: {local_ip}")
+    
+    try:
+        processor = OrderProcessor(base_url=base_url)
+        
+        # 步骤1: 初始化数据库
+        print("\n步骤1: 初始化数据库...")
+        processor.init_database()
+        print("✅ 数据库初始化完成")
+        
+        # 步骤2: 检查是否有Excel文件需要处理
+        excel_file = "orders.xlsx"
+        if os.path.exists(excel_file):
+            print(f"\n📋 发现Excel文件: {excel_file}")
+            
+            # 询问是否处理Excel文件
+            while True:
+                choice = input("是否要处理Excel销售订单数据并自动扣减库存？(y/n): ").strip().lower()
+                if choice in ['y', 'yes', '是', '']:
+                    print("\n步骤2: 处理Excel销售订单数据（自动扣减库存）...")
+                    result = processor.process_excel_data()
+                    
+                    if result["success"]:
+                        print(f"✅ 成功处理 {result['success_count']} 条销售订单")
+                        if result.get('failed_count', 0) > 0:
+                            print(f"⚠️ 失败 {result['failed_count']} 条记录")
+                        
+                        # 生成二维码
+                        print("\n步骤3: 生成二维码...")
+                        qr_result = processor.generate_qr_codes()
+                        if qr_result['success']:
+                            print(f"✅ 成功生成 {qr_result['count']} 个二维码")
+                        else:
+                            print(f"❌ 二维码生成失败: {qr_result['error']}")
+                    else:
+                        print(f"❌ Excel数据处理失败: {result['error']}")
+                        print("💡 您可以稍后在Web界面中上传Excel文件")
+                    break
+                elif choice in ['n', 'no', '否']:
+                    print("⏭️ 跳过Excel文件处理，您可以稍后在Web界面中上传")
+                    break
+                else:
+                    print("请输入 y(是) 或 n(否)")
+        else:
+            print(f"\n💡 未发现Excel文件 {excel_file}，您可以稍后在Web界面中上传Excel文件")
+        
+        print("✅ 系统初始化完成")
+        return True
+        
+    except Exception as e:
+        print(f"❌ 系统初始化失败: {e}")
+        return False
+
+def process_excel_data():
+    """处理Excel数据并生成二维码"""
+    import socket
+    
+    def get_local_ip():
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            return local_ip
+        except:
+            return "127.0.0.1"
+    
+    print("\n=== 处理Excel销售订单数据 ===")
+    
+    # 检查Excel文件是否存在
+    excel_file = "orders.xlsx"
+    if not os.path.exists(excel_file):
+        print(f"❌ Excel文件 {excel_file} 不存在")
+        print("💡 请将要处理的Excel文件重命名为 'orders.xlsx' 并放在系统目录中")
+        print("📋 Excel文件必须包含以下列：订单号、客户姓名、订单日期、产品编码、产品名称、数量、销售单价")
+        return False
+    
     try:
         local_ip = get_local_ip()
         base_url = f"http://{local_ip}:5000"
         print(f"🌐 使用IP地址: {local_ip}")
         
         processor = OrderProcessor(base_url=base_url)
-        processor.run_full_process()
-        print("✅ 数据处理完成")
+        processor.init_database()
+        
+        # 处理Excel数据（包含自动扣减库存功能）
+        print("\n🔄 处理Excel销售订单数据（自动扣减原料库存）...")
+        result = processor.process_excel_data()
+        
+        if result["success"]:
+            print(f"✅ 成功处理 {result['success_count']} 条销售订单")
+            if result.get('failed_count', 0) > 0:
+                print(f"⚠️ 失败 {result['failed_count']} 条记录")
+            
+            # 生成二维码
+            print("\n🔄 生成二维码...")
+            qr_result = processor.generate_qr_codes()
+            if qr_result['success']:
+                print(f"✅ 成功生成 {qr_result['count']} 个二维码")
+            else:
+                print(f"❌ 二维码生成失败: {qr_result['error']}")
+        else:
+            print(f"❌ Excel数据处理失败: {result['error']}")
+            return False
+            
+        print("✅ Excel销售订单处理完成，已自动扣减原料库存")
+        return True
+        
     except Exception as e:
-        print(f"❌ 数据处理失败: {e}")
+        print(f"❌ 处理Excel数据失败: {e}")
         return False
-    
-    return True
 
 def start_server():
     """启动Flask服务器"""
@@ -106,8 +204,8 @@ def show_menu():
     print("\n" + "="*50)
     print("🎯 订单二维码查询系统")
     print("="*50)
-    print("1. 一键启动完整系统")
-    print("2. 仅处理Excel数据和生成二维码")
+    print("1. 启动系统（智能检测Excel文件）")
+    print("2. 仅处理Excel销售订单数据")
     print("3. 仅启动Web服务器")
     print("4. 查看系统状态")
     print("5. 退出")
@@ -162,14 +260,14 @@ def main():
         choice = input("请选择操作 (1-5): ").strip()
         
         if choice == "1":
-            # 一键启动完整系统
+            # 启动系统（智能检测Excel文件）
             if setup_system():
                 time.sleep(2)  # 等待2秒让用户看到结果
                 start_server()
             
         elif choice == "2":
-            # 仅处理数据
-            setup_system()
+            # 仅处理Excel销售订单数据
+            process_excel_data()
             input("\n按回车键返回菜单...")
             
         elif choice == "3":

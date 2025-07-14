@@ -11,6 +11,14 @@ import sqlite3
 from datetime import datetime
 import random
 
+# 导入生产订单管理器
+try:
+    from production_order_manager import ProductionOrderManager
+    PRODUCTION_MANAGER_AVAILABLE = True
+except ImportError:
+    PRODUCTION_MANAGER_AVAILABLE = False
+    print("⚠️ 生产订单管理器未正确导入，将跳过原料库存扣减")
+
 class OrderProcessor:
     def __init__(self, excel_file="orders.xlsx", db_file="orders.db", base_url=None):
         self.excel_file = excel_file
@@ -360,38 +368,74 @@ class OrderProcessor:
                     # 计算销售总额
                     sale_total_amount = quantity * sale_unit_price
                     
-                    # 获取产品的BOM清单
+                    # 检查成品库存状态
                     cursor.execute('''
-                        SELECT bi.material_code, bi.required_quantity, bi.unit,
-                               ii.current_stock
-                        FROM bom_items bi
-                        LEFT JOIN inventory_items ii ON bi.material_code = ii.item_code
-                        WHERE bi.product_code = ?
+                        SELECT current_stock
+                        FROM inventory_items
+                        WHERE item_code = ? AND item_category = '产品'
                     ''', (product_code,))
                     
-                    bom_items = cursor.fetchall()
+                    product_stock_result = cursor.fetchone()
                     
-                    # 检查并扣减原料库存
-                    insufficient_materials = []
-                    for item in bom_items:
-                        material_code = item[0]
-                        required_qty = item[1]
-                        unit = item[2]
-                        current_stock = item[3] or 0
+                    if product_stock_result:
+                        current_product_stock = product_stock_result[0] or 0
                         
-                        total_required = required_qty * quantity
+                        # 检查成品库存是否充足（不阻止导入，只提示）
+                        if current_product_stock < quantity:
+                            shortage = quantity - current_product_stock
+                            print(f"⚠️ 订单 {order_id} 成品库存不足（允许负库存）:")
+                            print(f"   📉 {product_code}: 需要{quantity}个, 库存{current_product_stock}个, 缺少{shortage}个")
+                        else:
+                            print(f"✅ 订单 {order_id} 成品库存充足")
                         
-                        if current_stock < total_required:
-                            insufficient_materials.append(
-                                f"{material_code}: 需要{total_required}{unit}, 库存{current_stock}{unit}"
-                            )
+                        # 🔥 重要：销售订单应该扣减成品库存，而不是原料库存
+                        print(f"📦 开始扣减订单 {order_id} 的成品库存...")
+                        
+                        # 扣减成品库存
+                        success = self.record_inventory_transaction(
+                            item_code=product_code,
+                            transaction_type='out',
+                            quantity=quantity,
+                            notes=f'销售订单 {order_id} 出库',
+                            conn=conn
+                        )
+                        
+                        if not success:
+                            raise Exception(f"成品 {product_code} 出库失败")
+                        
+                        print(f"📦 成品出库: {product_code} × {quantity}")
+                        print(f"✅ 订单 {order_id} 成品库存扣减完成")
+                    else:
+                        # 如果成品不存在于库存中，创建成品库存记录
+                        print(f"⚠️ 成品 {product_code} 不存在于库存中，创建库存记录...")
+                        
+                        cursor.execute('''
+                            INSERT INTO inventory_items 
+                            (item_code, item_name, item_category, unit,
+                             current_stock, weighted_avg_price, total_value,
+                             low_stock_threshold, warning_stock_threshold)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            product_code, product_name, '产品', '个',
+                            0, 0, 0, 10, 20  # 产品默认阈值
+                        ))
+                        
+                        # 扣减成品库存（允许负库存）
+                        success = self.record_inventory_transaction(
+                            item_code=product_code,
+                            transaction_type='out',
+                            quantity=quantity,
+                            notes=f'销售订单 {order_id} 出库',
+                            conn=conn
+                        )
+                        
+                        if not success:
+                            raise Exception(f"成品 {product_code} 出库失败")
+                        
+                        print(f"📦 成品出库: {product_code} × {quantity} （库存不足，允许负库存）")
+                        print(f"✅ 订单 {order_id} 成品库存扣减完成")
                     
-                    if insufficient_materials:
-                        error_msg = f"订单 {order_id} 的原料库存不足:\n" + "\n".join(insufficient_materials)
-                        print(f"❌ {error_msg}")
-                        continue
-                    
-                    # 计算产品成本
+                    # 计算产品成本（独立于库存扣减）
                     cost_result = self.calculate_product_cost(product_code, quantity, conn=conn)
                     
                     unit_cost = 0
@@ -413,28 +457,8 @@ class OrderProcessor:
                             profit_status = 'break_even'
                             
                         print(f"💰 {order_id}: 销售额¥{sale_total_amount:.2f}, 成本¥{total_cost:.2f}, {'盈利' if profit > 0 else '亏损' if profit < 0 else '保本'}¥{abs(profit):.2f}")
-                        
-                        # 扣减原料库存
-                        for item in bom_items:
-                            material_code = item[0]
-                            required_qty = item[1]
-                            total_required = required_qty * quantity
-                            
-                            # 记录原料出库
-                            success = self.record_inventory_transaction(
-                                item_code=material_code,
-                                transaction_type='out',
-                                quantity=total_required,
-                                notes=f'销售订单 {order_id} 扣减',
-                                conn=conn
-                            )
-                            
-                            if not success:
-                                raise Exception(f"原料 {material_code} 出库失败")
-                            
-                            print(f"📦 原料出库: {material_code} × {total_required}")
                     else:
-                        print(f"⚠️ {order_id}: 无法计算成本 - {cost_result.get('error', '未知错误')}")
+                        print(f"⚠️ {order_id}: 无法计算成本 - {cost_result.get('error', '未知错误')}，但库存已正确扣减")
                     
                     # 构建产品详情描述
                     product_details = f"{product_name} (编码: {product_code})"
@@ -460,13 +484,25 @@ class OrderProcessor:
                 return {"success": False, "error": "没有成功处理任何销售订单数据"}
             
             print(f"🎉 销售订单导入完成，成功处理 {success_count} 条订单，已自动计算盈亏状态")
+            
+            # 🔥 重要：销售订单处理完成后，自动转换为生产订单并扣减原料库存
+            if PRODUCTION_MANAGER_AVAILABLE and success_count > 0:
+                print("\n🏭 开始自动处理生产订单，扣减原料库存...")
+                try:
+                    production_manager = ProductionOrderManager(self.db_file)
+                    production_manager.process_all_sales_orders()
+                    print("✅ 生产订单处理完成，原料库存已自动扣减")
+                except Exception as e:
+                    print(f"⚠️ 生产订单处理失败: {e}，但销售订单导入成功")
+            
             return {
                 "success": True, 
                 "processed_orders": total_rows,
                 "success_count": success_count, 
                 "failed_count": total_rows - success_count,
                 "count": success_count, 
-                "total": total_rows
+                "total": total_rows,
+                "production_processed": PRODUCTION_MANAGER_AVAILABLE and success_count > 0
             }
             
         except Exception as e:
@@ -603,20 +639,21 @@ class OrderProcessor:
         # 检查Excel文件是否存在
         if not os.path.exists(self.excel_file):
             print(f"Excel文件 {self.excel_file} 不存在，创建示例文件...")
-            self.create_sample_excel()
+            self.create_sales_order_sample_excel(self.excel_file)
         
         # 初始化数据库
         self.init_database()
         
-        # 处理Excel数据
-        if self.process_excel():
+        # 处理Excel数据 - 使用新的支持盈亏计算的函数
+        result = self.process_excel_data()
+        if result["success"]:
             # 生成二维码
             self.generate_qrcodes()
             print("\n=== 处理完成 ===")
             print(f"数据库文件: {self.db_file}")
             print(f"二维码目录: {self.qr_output_dir}")
         else:
-            print("处理失败！")
+            print(f"❌ 处理失败：{result.get('error', '未知错误')}")
 
     def process_purchase_orders(self, purchase_excel_file):
         """处理采购订单Excel文件并更新库存"""
@@ -985,7 +1022,7 @@ class OrderProcessor:
                 
                 # 如果是税费，先跳过，最后计算
                 if name == '税费':
-                    tax_rate = value / 100 if cost_type == 'percentage' else None
+                    tax_rate = value / 100 if cost_type == 'percentage' else value
                     continue
                     
                 # 根据配置项类型计算成本
@@ -1020,12 +1057,23 @@ class OrderProcessor:
             )
             
             # 6. 计算税费（如果有）
-            if tax_rate is not None:
+            tax_rate = None  # 初始化税率
+            if 'tax_rate' in locals():
                 costs['tax_cost'] = subtotal_cost * tax_rate
+            else:
+                costs['tax_cost'] = 0
             
             # 7. 计算总成本
             total_cost = subtotal_cost + costs['tax_cost']
             unit_cost = total_cost / quantity if quantity > 0 else 0
+            
+            # 提取各项成本值
+            material_cost = costs['material_cost']
+            labor_cost = costs['labor_cost'] 
+            management_cost = costs['management_cost']
+            transport_cost = costs['transport_cost']
+            tax_cost = costs['tax_cost']
+            other_cost = sum(costs['other_costs'].values())
             
             # 4. 保存成本记录
             cost_id = f"{product_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
@@ -1103,16 +1151,18 @@ class OrderProcessor:
             stock = item[4] or 0
             
             total_required = required_qty * quantity
+            cost = total_required * avg_price
+            material_cost += cost
             
             if stock >= total_required:
-                cost = total_required * avg_price
-                material_cost += cost
-                print(f"   🔧 {material_code}: {total_required}{unit} × ¥{avg_price:.2f} = ¥{cost:.2f}")
+                print(f"   🔧 {material_code}: {total_required}{unit} × ¥{avg_price:.2f} = ¥{cost:.2f} (库存充足)")
+            elif stock > 0:
+                shortage = total_required - stock
+                print(f"   📉 {material_code}: {total_required}{unit} × ¥{avg_price:.2f} = ¥{cost:.2f} (库存不足{shortage}{unit})")
             else:
-                print(f"   ⚠️ {material_code}: 库存不足 (需要{total_required}{unit}, 库存{stock}{unit})")
-                # 仍按现有价格计算，但标记库存不足
-                cost = total_required * avg_price
-                material_cost += cost
+                print(f"   🚫 {material_code}: {total_required}{unit} × ¥{avg_price:.2f} = ¥{cost:.2f} (库存为0或负数)")
+            
+            # 无论库存是否充足，都按价格计算成本
         
         return material_cost
 
@@ -1174,7 +1224,7 @@ class OrderProcessor:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
             
-            # 获取库存统计
+            # 获取库存统计（包含负库存）
             cursor.execute('''
                 SELECT 
                     item_category,
@@ -1183,7 +1233,6 @@ class OrderProcessor:
                     SUM(total_value) as total_value,
                     AVG(weighted_avg_price) as avg_price
                 FROM inventory_items 
-                WHERE current_stock > 0
                 GROUP BY item_category
                 ORDER BY total_value DESC
             ''')
@@ -1201,7 +1250,7 @@ class OrderProcessor:
             
             low_stock_items = cursor.fetchall()
             
-            # 获取总体统计
+            # 获取总体统计（包含负库存）
             cursor.execute('''
                 SELECT 
                     COUNT(*) as total_items,
@@ -1209,7 +1258,6 @@ class OrderProcessor:
                     SUM(total_value) as total_value,
                     COUNT(DISTINCT item_category) as total_categories
                 FROM inventory_items
-                WHERE current_stock > 0
             ''')
             
             overall_stats = cursor.fetchone()

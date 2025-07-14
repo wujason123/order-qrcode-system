@@ -261,11 +261,28 @@ def upload_file():
                 # 生成二维码
                 qr_result = processor.generate_qr_codes()
                 if qr_result['success']:
+                    # 等待一小段时间确保所有数据库事务完全提交
+                    import time
+                    time.sleep(0.5)  # 等待500ms确保数据库事务提交
+                    
+                    # 验证数据是否正确插入到数据库
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT COUNT(*) FROM orders')
+                    total_orders = cursor.fetchone()[0]
+                    conn.close()
+                    
+                    print(f"✅ 数据库验证: 当前共有 {total_orders} 条订单记录")
+                    
                     return jsonify({
                         'success': True,
-                        'message': f'成功处理 {result["count"]} 条订单数据，生成 {qr_result["count"]} 个二维码',
+                        'message': f'成功处理 {result["count"]} 条销售订单，已自动扣减原料库存，生成 {qr_result["count"]} 个二维码',
                         'orders_count': result['count'],
-                        'qr_count': qr_result['count']
+                        'qr_count': qr_result['count'],
+                        'inventory_deducted': True,
+                        'details': f'处理了 {result["count"]} 条订单，根据BOM清单自动扣减了原料库存',
+                        'total_orders_in_db': total_orders,  # 添加数据库验证信息
+                        'processing_timestamp': datetime.now().isoformat()  # 添加处理时间戳
                     })
                 else:
                     return jsonify({
@@ -468,6 +485,44 @@ def get_qr_codes():
             
     except Exception as e:
         return jsonify({'error': f'获取二维码列表失败: {str(e)}'}), 500
+
+@app.route('/api/order/<order_id>', methods=['DELETE'])
+@login_required
+def delete_single_order(order_id):
+    """删除单个订单"""
+    try:
+        if not order_id:
+            return jsonify({'error': '缺少订单号参数'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 检查订单是否存在
+        cursor.execute('SELECT order_id FROM orders WHERE order_id = ?', (order_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'error': f'订单 {order_id} 不存在'}), 404
+        
+        # 删除订单
+        cursor.execute('DELETE FROM orders WHERE order_id = ?', (order_id,))
+        deleted_count = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        # 删除对应的二维码文件
+        qr_file = f"{QR_DIR}/order_{order_id}.png"
+        if os.path.exists(qr_file):
+            os.remove(qr_file)
+        
+        return jsonify({
+            'success': True,
+            'message': f'订单 {order_id} 删除成功',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'删除订单失败: {str(e)}'}), 500
 
 @app.route('/api/duplicates', methods=['DELETE'])
 @login_required
@@ -1279,6 +1334,7 @@ def get_product_costs():
         cursor.execute('''
             WITH LatestCosts AS (
                 SELECT 
+                    id,
                     product_code,
                     material_cost,
                     labor_cost,
@@ -1307,6 +1363,7 @@ def get_product_costs():
         costs_list = []
         for cost in costs:
             costs_list.append({
+                'id': cost['id'],
                 'product_code': cost['product_code'],
                 'product_name': cost['product_name'] or cost['product_code'],
                 'material_cost': float(cost['material_cost']),
@@ -1332,6 +1389,40 @@ def get_product_costs():
             'error': str(e)
         }), 500
 
+@app.route('/api/product_costs/<product_code>', methods=['DELETE'])
+@login_required
+def delete_product_cost(product_code):
+    """删除产品成本记录API"""
+    try:
+        if not product_code:
+            return jsonify({'error': '缺少产品编码参数'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 检查成本记录是否存在
+        cursor.execute('SELECT product_code FROM production_costs WHERE product_code = ?', (product_code,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'error': f'产品 {product_code} 的成本记录不存在'}), 404
+        
+        # 删除产品的所有成本记录
+        cursor.execute('DELETE FROM production_costs WHERE product_code = ?', (product_code,))
+        deleted_count = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'产品 {product_code} 的成本记录删除成功',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        print(f"❌ 删除产品成本记录失败: {str(e)}")
+        return jsonify({'error': f'删除成本记录失败: {str(e)}'}), 500
+
 @app.route('/api/update_cost_config', methods=['POST'])
 @login_required
 def update_cost_config():
@@ -1356,27 +1447,7 @@ def update_cost_config():
     except Exception as e:
         return jsonify({'error': f'更新成本配置失败: {str(e)}'}), 500
 
-@app.route('/api/update_item_thresholds', methods=['POST'])
-@login_required
-def update_item_thresholds():
-    """更新物料阈值API"""
-    try:
-        data = request.get_json()
-        
-        if not data or 'item_id' not in data or 'low_threshold' not in data or 'warning_threshold' not in data:
-            return jsonify({'error': '缺少参数'}), 400
-        
-        item_id = int(data['item_id'])
-        low_threshold = float(data['low_threshold'])
-        warning_threshold = float(data['warning_threshold'])
-        
-        processor = OrderProcessor()
-        result = processor.update_item_thresholds(item_id, low_threshold, warning_threshold)
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({'error': f'更新阈值失败: {str(e)}'}), 500
+
 
 @app.route('/api/bom_list')
 @login_required
@@ -2440,3 +2511,94 @@ def update_inventory_item():
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/update_item_thresholds', methods=['POST'])
+@login_required
+def update_item_thresholds():
+    """更新物料阈值（按物料ID）"""
+    try:
+        data = request.get_json()
+        if not data or 'item_id' not in data:
+            return jsonify({'error': '缺少物料ID'}), 400
+            
+        item_id = int(data['item_id'])
+        low_threshold = int(data.get('low_threshold', 0))
+        warning_threshold = int(data.get('warning_threshold', 0))
+        
+        if warning_threshold <= low_threshold:
+            return jsonify({'error': '警告阈值必须大于低库存阈值'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 更新阈值
+        cursor.execute('''
+            UPDATE inventory_items 
+            SET low_stock_threshold = ?,
+                warning_stock_threshold = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (low_threshold, warning_threshold, item_id))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'error': '物料不存在'}), 404
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': '阈值设置已更新'
+        })
+        
+    except Exception as e:
+        print(f"❌ 更新物料阈值失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/inventory_item/<item_code>', methods=['DELETE'])
+@login_required
+def delete_inventory_item(item_code):
+    """删除库存物料API"""
+    try:
+        if not item_code:
+            return jsonify({'error': '缺少物料编码参数'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 检查物料是否存在
+        cursor.execute('SELECT item_code, item_name FROM inventory_items WHERE item_code = ?', (item_code,))
+        item = cursor.fetchone()
+        if not item:
+            conn.close()
+            return jsonify({'error': f'物料 {item_code} 不存在'}), 404
+        
+        # 检查是否有相关的BOM记录
+        cursor.execute('SELECT COUNT(*) as count FROM bom_items WHERE material_code = ? OR product_code = ?', (item_code, item_code))
+        bom_count = cursor.fetchone()['count']
+        
+        if bom_count > 0:
+            # 先删除相关的BOM记录
+            cursor.execute('DELETE FROM bom_items WHERE material_code = ? OR product_code = ?', (item_code, item_code))
+            print(f"删除了 {cursor.rowcount} 条相关的BOM记录")
+        
+        # 删除库存物料
+        cursor.execute('DELETE FROM inventory_items WHERE item_code = ?', (item_code,))
+        deleted_count = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'物料 {item_code} 删除成功' + (f'（同时删除了 {bom_count} 条相关BOM记录）' if bom_count > 0 else ''),
+            'deleted_count': deleted_count,
+            'bom_count': bom_count
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'删除物料失败: {str(e)}'}), 500

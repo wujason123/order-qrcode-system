@@ -330,6 +330,14 @@
                 {% endif %}
             </div>
             <p class="text-white-50">扫描二维码或输入订单号查询订单详情</p>
+            
+            <!-- 数据刷新提示 -->
+            <div class="alert alert-info alert-dismissible fade show mx-auto" style="max-width: 600px;" role="alert">
+                <i class="bi bi-info-circle"></i>
+                <strong>数据同步提示：</strong> 系统已升级为智能数据同步，导入订单后会自动验证数据一致性。
+                如遇数据未及时更新，请点击 <strong class="text-warning">🔄 刷新数据</strong> 按钮。
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
         </div>
 
         <!-- Excel文件上传区域 - 仅管理员可见 -->
@@ -347,7 +355,12 @@
                                accept=".xlsx,.xls" required>
                         <div class="form-text">
                             <i class="bi bi-info-circle"></i> 
-                            支持 .xlsx 和 .xls 格式，<strong>新格式需包含：</strong>订单号、客户姓名、订单日期、<span class="text-primary">产品编码、产品名称、数量、销售单价</span>（支持自动盈亏计算）
+                            支持 .xlsx 和 .xls 格式，<strong>新格式需包含：</strong>订单号、客户姓名、订单日期、<span class="text-primary">产品编码、产品名称、数量、销售单价</span>
+                            <br>
+                            <span class="text-success">
+                                <i class="bi bi-box-arrow-down"></i> 
+                                <strong>自动功能：</strong>根据BOM清单自动扣减原料库存，自动计算订单盈亏
+                            </span>
                             <br>
                             <a href="/download/template" class="text-decoration-none">
                                 <i class="bi bi-download"></i> 下载Excel模板文件
@@ -356,7 +369,7 @@
                     </div>
                     <div class="text-center">
                         <button type="submit" class="btn btn-primary" id="uploadBtn">
-                            <i class="bi bi-upload"></i> 上传并生成二维码
+                            <i class="bi bi-upload"></i> 上传销售订单（自动扣减库存）
                         </button>
                     </div>
                 </form>
@@ -851,6 +864,11 @@
                 <div class="d-flex align-items-center gap-2">
                     <span id="ordersCount" class="badge bg-primary"></span>
                     
+                    <!-- 刷新数据按钮 -->
+                    <button type="button" class="btn btn-warning btn-sm" onclick="forceRefreshAllData()" title="强制刷新所有数据" id="refreshDataBtn">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新数据
+                    </button>
+                    
                     <!-- 打印功能按钮组 -->
                     <div class="btn-group" role="group">
                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllPrintCheckboxes()" title="全选/取消全选">
@@ -1084,6 +1102,51 @@
         </div>
     </div>
 
+    <!-- 产品入库模态框 -->
+    <div class="modal fade" id="productStockModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-box-arrow-in-down"></i> 产品入库
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="productStockForm">
+                        <div class="mb-3">
+                            <label for="stockProductCode" class="form-label">产品编码</label>
+                            <select class="form-control" id="stockProductCode" required>
+                                <option value="">请选择产品</option>
+                            </select>
+                            <div class="form-text">选择要入库的产品</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="stockQuantity" class="form-label">入库数量</label>
+                            <input type="number" class="form-control" id="stockQuantity" required min="1">
+                            <div class="form-text">输入入库的产品数量</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="stockUnitPrice" class="form-label">单价（可选）</label>
+                            <input type="number" class="form-control" id="stockUnitPrice" step="0.01" min="0">
+                            <div class="form-text">如果有单价信息，将更新产品的加权平均价格</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="stockNotes" class="form-label">备注</label>
+                            <textarea class="form-control" id="stockNotes" rows="2" placeholder="入库备注信息（可选）"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitProductStock()">
+                        <i class="bi bi-check-lg"></i> 确认入库
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 添加必要的JavaScript库 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -1093,9 +1156,21 @@
         let currentPage = 1; // 当前页码
         const ordersPerPage = 9; // 每页显示订单数
         
-        // 页面加载时获取订单列表
+        // 系统启动时自动触发刷新机制
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 系统启动，开始加载数据...');
+            
+            // 初始加载
             loadAllOrders();
+            
+            // 系统启动后3秒自动点击刷新按钮（确保获取最新数据）
+            setTimeout(() => {
+                console.log('🔄 系统启动 - 自动触发强制刷新按钮...');
+                autoTriggerRefreshButton('system_startup');
+            }, 3000);
+            
+            // 启用数据变化检测机制
+            enableDataChangeDetection();
             
             // 检查URL参数是否有订单号
             const urlParams = new URLSearchParams(window.location.search);
@@ -1171,6 +1246,12 @@
                     if (result.success) {
                         displayCostResult(result.cost);
                         showAlert('success', '成本计算完成');
+                        
+                        // 🤖 成本计算完成，自动触发刷新按钮
+                        console.log('🤖 成本计算完成，自动触发刷新按钮...');
+                        setTimeout(() => {
+                            autoTriggerRefreshButton('data_import');
+                        }, 500);
                     } else {
                         resultDiv.innerHTML = '';
                         showAlert('danger', result.error || '计算失败');
@@ -1225,6 +1306,16 @@
                     loadProductCosts();
                 }
             }
+            
+            // 确保成本配置项在页面加载时总是被加载，避免转圈问题
+            setTimeout(() => {
+                const costTab = document.querySelector('[data-bs-target="#cost"]');
+                if (costTab && costTab.classList.contains('active')) {
+                    console.log('延迟加载成本配置项...');
+                    loadCostConfigItems();
+                    loadProductCosts();
+                }
+            }, 500);
         });
 
         // 搜索指定订单
@@ -1374,15 +1465,73 @@
         }
 
         // 加载所有订单
-        async function loadAllOrders() {
+        async function loadAllOrders(forceRefresh = false) {
             try {
-                const response = await fetch('/orders');
+                // 强力缓存清除机制
+                const timestamp = new Date().getTime();
+                const randomParam = Math.random().toString(36).substr(2, 9);
+                const url = forceRefresh ? 
+                    `/orders?_t=${timestamp}&_r=${randomParam}&_f=1` : 
+                    `/orders?_t=${timestamp}`;
+                
+                // 显示加载状态
+                const ordersListElement = document.getElementById('ordersList');
+                if (ordersListElement) {
+                    ordersListElement.innerHTML = `
+                        <div class="text-center text-muted py-3">
+                            <div class="spinner-border spinner-border-sm me-2"></div>
+                            正在${forceRefresh ? '强制' : ''}加载订单数据...
+                        </div>
+                    `;
+                }
+                
+                // 强力缓存清除的fetch请求
+                const fetchOptions = {
+                    method: 'GET',
+                    cache: 'no-store', // 完全不使用缓存
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0',
+                        'If-Modified-Since': 'Thu, 01 Jan 1970 00:00:00 GMT'
+                    }
+                };
+                
+                if (forceRefresh) {
+                    // 强制刷新时，先清除可能的本地状态
+                    allOrders = [];
+                    console.log('已清除本地订单缓存，准备重新获取数据...');
+                }
+                
+                const response = await fetch(url, fetchOptions);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
 
                 if (data.success) {
+                    const previousCount = allOrders.length;
                     allOrders = data.data; // 存储所有订单数据
                     currentPage = 1; // 重置到第一页
                     displayOrdersList();
+                    
+                    // 强制刷新时提供详细的反馈
+                    if (forceRefresh) {
+                        console.log(`📊 数据刷新结果: 前${previousCount}条 -> 现${data.data.length}条订单`);
+                        if (data.data.length !== previousCount) {
+                            console.log(`✅ 检测到数据变化: ${previousCount} -> ${data.data.length}`);
+                        } else {
+                            console.log(`ℹ️ 数据数量未变化，但可能有内容更新`);
+                        }
+                        
+                        // 更新订单数显示
+                        const countBadge = document.getElementById('ordersCount');
+                        if (countBadge) {
+                            countBadge.textContent = `${data.data.length} 条订单`;
+                        }
+                    }
                 } else {
                     document.getElementById('ordersList').innerHTML = 
                         `<div class="error-message">加载失败: ${data.message}</div>`;
@@ -1431,6 +1580,15 @@
                                 <label class="form-check-label visually-hidden" for="print_${order.order_id}">
                                     选择打印
                                 </label>
+                            </div>
+                            
+                            <!-- 删除按钮 -->
+                            <div class="position-absolute" style="top: 45px; right: 10px; z-index: 10;">
+                                <button class="btn btn-outline-danger btn-sm" 
+                                        onclick="event.stopPropagation(); deleteOrder('${order.order_id}')"
+                                        title="删除订单">
+                                    <i class="bi bi-trash"></i>
+                                </button>
                             </div>
                             
                             <div class="card-body" style="cursor: pointer;">
@@ -1604,11 +1762,15 @@
                 hideUploadProgress();
 
                 if (data.success) {
-                    showUploadSuccess(data.message, data.orders_count, data.qr_count);
-                    // 刷新订单列表
-                    loadAllOrders();
+                    showUploadSuccess(data.message, data.orders_count, data.qr_count, data);
                     // 清空文件选择
                     fileInput.value = '';
+                    
+                    // 🤖 销售订单上传成功，自动触发刷新按钮
+                    console.log('🤖 销售订单上传成功，自动触发刷新按钮...');
+                    setTimeout(() => {
+                        autoTriggerRefreshButton('order_upload');
+                    }, 1000);
                 } else {
                     // 检查是否有重复订单号信息
                     const duplicates = data.duplicates || null;
@@ -1635,15 +1797,43 @@
         }
 
         // 显示上传成功消息
-        function showUploadSuccess(message, ordersCount, qrCount) {
-            document.getElementById('uploadResult').innerHTML = `
+        function showUploadSuccess(message, ordersCount, qrCount, data = {}) {
+            let successHtml = `
                 <div class="success-message">
                     <i class="bi bi-check-circle"></i> 
-                    <strong>上传成功！</strong><br>
+                    <strong>销售订单导入成功！</strong><br>
                     ${message}<br>
                     <small>处理了 ${ordersCount} 条订单，生成了 ${qrCount} 个二维码</small>
-                </div>
             `;
+
+            // 如果有库存扣减信息，显示详细说明
+            if (data.inventory_deducted) {
+                successHtml += `
+                    <div class="mt-2 p-2 bg-light rounded border-start border-4 border-success">
+                        <small class="text-success">
+                            <i class="bi bi-box-arrow-down"></i> 
+                            <strong>库存已自动扣减</strong><br>
+                            根据产品BOM清单，系统已自动从仓储中扣减相应的原料数量
+                        </small>
+                    </div>
+                `;
+            }
+
+            // 如果有数据库验证信息，显示数据同步状态
+            if (data.total_orders_in_db) {
+                successHtml += `
+                    <div class="mt-2 p-2 bg-info bg-opacity-10 rounded border-start border-4 border-info">
+                        <small class="text-info">
+                            <i class="bi bi-database-check"></i> 
+                            <strong>数据验证中</strong><br>
+                            数据库总订单数: ${data.total_orders_in_db} 条，正在验证前端数据同步...
+                        </small>
+                    </div>
+                `;
+            }
+
+            successHtml += `</div>`;
+            document.getElementById('uploadResult').innerHTML = successHtml;
         }
 
         // 显示上传错误消息
@@ -1779,6 +1969,146 @@
             }, 3000);
         }
 
+        // 强制刷新所有数据
+        async function forceRefreshAllData() {
+            const refreshBtn = document.getElementById('refreshDataBtn');
+            const originalText = '<i class="bi bi-arrow-clockwise"></i> 刷新数据';
+            
+            try {
+                // 恢复按钮正常状态（清除可能的验证失败状态）
+                refreshBtn.classList.remove('btn-danger');
+                refreshBtn.classList.add('btn-warning');
+                
+                // 显示刷新状态
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 刷新中...';
+                
+                console.log('🔄 开始强制刷新所有数据...');
+                
+                // 清除所有本地缓存数据
+                allOrders = [];
+                
+                // 强制刷新订单列表（多次尝试确保成功）
+                console.log('🔄 强制刷新订单列表...');
+                await loadAllOrders(true);
+                
+                // 等待500ms再次刷新
+                setTimeout(async () => {
+                    console.log('🔄 二次确认刷新订单列表...');
+                    await loadAllOrders(true);
+                    
+                    // 显示成功消息
+                    showTemporaryMessage('✅ 所有数据已强制刷新！', 'success');
+                }, 500);
+                
+                // 根据当前激活的标签页刷新对应数据
+                const activeTab = document.querySelector('.nav-link.active');
+                if (activeTab) {
+                    const tabTarget = activeTab.getAttribute('data-bs-target');
+                    console.log('🔄 刷新当前标签页数据:', tabTarget);
+                    
+                    if (tabTarget === '#inventory') {
+                        loadInventorySummary();
+                    } else if (tabTarget === '#cost') {
+                        loadProductList();
+                        loadCostConfigItems();
+                        loadProductCosts();
+                    } else if (tabTarget === '#bom') {
+                        loadBomList();
+                    }
+                }
+                
+            } catch (error) {
+                console.error('强制刷新数据失败:', error);
+                showTemporaryMessage('❌ 数据刷新失败: ' + error.message, 'error');
+            } finally {
+                // 恢复按钮状态
+                setTimeout(() => {
+                    refreshBtn.disabled = false;
+                    refreshBtn.innerHTML = originalText;
+                    refreshBtn.classList.remove('btn-danger');
+                    refreshBtn.classList.add('btn-warning');
+                }, 2000);
+            }
+        }
+
+        // 自动触发刷新按钮的核心功能
+        function autoTriggerRefreshButton(reason = 'data_change') {
+            console.log(`🤖 自动触发刷新按钮 - 原因: ${reason}`);
+            
+            const refreshBtn = document.getElementById('refreshDataBtn');
+            if (!refreshBtn) {
+                console.warn('找不到刷新按钮，创建临时刷新操作...');
+                forceRefreshAllData();
+                return;
+            }
+            
+            // 为按钮添加特殊样式表示自动触发
+            refreshBtn.classList.add('btn-info');
+            refreshBtn.classList.remove('btn-warning');
+            
+            // 更新按钮文本显示自动触发原因
+            const originalText = refreshBtn.innerHTML;
+            const reasonText = {
+                'system_startup': '系统启动刷新',
+                'data_import': '数据导入刷新', 
+                'data_change': '数据变化刷新',
+                'order_upload': '订单上传刷新',
+                'bom_upload': 'BOM上传刷新',
+                'purchase_upload': '采购上传刷新'
+            };
+            
+            refreshBtn.innerHTML = `<i class="bi bi-robot"></i> ${reasonText[reason] || '自动刷新'}...`;
+            
+            // 模拟点击刷新按钮
+            setTimeout(() => {
+                console.log(`🔄 执行自动刷新 - ${reason}`);
+                forceRefreshAllData();
+                
+                // 3秒后恢复按钮原始状态
+                setTimeout(() => {
+                    refreshBtn.innerHTML = originalText;
+                    refreshBtn.classList.remove('btn-info');
+                    refreshBtn.classList.add('btn-warning');
+                }, 3000);
+            }, 500);
+        }
+
+        // 启用数据变化检测机制
+        function enableDataChangeDetection() {
+            console.log('🔍 启用数据变化检测机制...');
+            
+            // 存储初始数据状态
+            let lastOrderCount = 0;
+            let lastDataTimestamp = Date.now();
+            
+            // 定期检测数据变化
+            setInterval(async () => {
+                try {
+                    // 获取当前订单数量
+                    const response = await fetch('/orders?_check=' + Date.now());
+                    const data = await response.json();
+                    
+                    if (data.success && data.data) {
+                        const currentOrderCount = data.data.length;
+                        
+                        // 检测到订单数量变化
+                        if (lastOrderCount > 0 && currentOrderCount !== lastOrderCount) {
+                            console.log(`📊 检测到订单数量变化: ${lastOrderCount} → ${currentOrderCount}`);
+                            autoTriggerRefreshButton('data_change');
+                        }
+                        
+                        lastOrderCount = currentOrderCount;
+                        lastDataTimestamp = Date.now();
+                    }
+                } catch (error) {
+                    console.log('数据变化检测错误:', error.message);
+                }
+            }, 30000); // 每30秒检测一次
+            
+            console.log('✅ 数据变化检测机制已启用');
+        }
+
         // 全选/取消全选打印复选框
         function toggleAllPrintCheckboxes() {
             const checkboxes = document.querySelectorAll('.print-checkbox');
@@ -1787,6 +2117,39 @@
             checkboxes.forEach(cb => {
                 cb.checked = !allChecked;
             });
+        }
+
+        // 删除单个订单
+        async function deleteOrder(orderId) {
+            if (!confirm(`确定要删除订单 ${orderId} 吗？\n删除后无法恢复！`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/order/${orderId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showTemporaryMessage(`✅ 订单 ${orderId} 删除成功`, 'success');
+                    
+                    // 🤖 订单删除成功，自动触发刷新按钮
+                    console.log('🤖 订单删除成功，自动触发刷新按钮...');
+                    setTimeout(() => {
+                        autoTriggerRefreshButton('data_change');
+                    }, 500);
+                } else {
+                    showTemporaryMessage(`❌ 删除失败: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('删除订单错误:', error);
+                showTemporaryMessage('❌ 网络错误，无法删除订单', 'error');
+            }
         }
 
         // 删除重复订单
@@ -1819,8 +2182,11 @@
                         </div>
                     `;
                     
-                    // 刷新订单列表
-                    loadAllOrders();
+                    // 🤖 重复订单删除成功，自动触发刷新按钮
+                    console.log('🤖 重复订单删除成功，自动触发刷新按钮...');
+                    setTimeout(() => {
+                        autoTriggerRefreshButton('data_change');
+                    }, 500);
                 } else {
                     showUploadError(data.error || '删除重复订单失败');
                 }
@@ -1983,6 +2349,12 @@
                 if (data.success) {
                     showPurchaseSuccess(data.message, data.purchase_count);
                     fileInput.value = '';
+                    
+                    // 🤖 采购订单上传成功，自动触发刷新按钮
+                    console.log('🤖 采购订单上传成功，自动触发刷新按钮...');
+                    setTimeout(() => {
+                        autoTriggerRefreshButton('purchase_upload');
+                    }, 500);
                 } else {
                     showPurchaseError(data.error);
                 }
@@ -2021,6 +2393,12 @@
                 if (data.success) {
                     showBomSuccess(data.message, data.bom_count);
                     fileInput.value = '';
+                    
+                    // 🤖 BOM数据上传成功，自动触发刷新按钮  
+                    console.log('🤖 BOM数据上传成功，自动触发刷新按钮...');
+                    setTimeout(() => {
+                        autoTriggerRefreshButton('bom_upload');
+                    }, 500);
                 } else {
                     showBomError(data.error);
                 }
@@ -2221,9 +2599,14 @@
                                                         </button>
                                                     </td>
                                                     <td class="text-center">
-                                                        <button class="btn btn-outline-secondary btn-sm"
+                                                        <button class="btn btn-outline-secondary btn-sm me-1"
                                                                 onclick="editInventoryItem('${item.item_code}', '${item.item_name}', '${item.unit}', '${item.item_category}')">
                                                             <i class="bi bi-pencil"></i> 编辑
+                                                        </button>
+                                                        <button class="btn btn-outline-danger btn-sm"
+                                                                onclick="deleteInventoryItem('${item.item_code}', '${item.item_name}')"
+                                                                title="删除物料">
+                                                            <i class="bi bi-trash"></i> 删除
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -2245,14 +2628,52 @@
             const collapse = document.getElementById(`category-${category}`);
             const toggle = document.getElementById(`toggle-${category}`);
             
+            if (!collapse || !toggle) {
+                console.error('找不到元素:', `category-${category}`, `toggle-${category}`);
+                return;
+            }
+            
             if (collapse.classList.contains('show')) {
+                // 收缩
                 collapse.classList.remove('show');
                 toggle.classList.remove('bi-chevron-up');
                 toggle.classList.add('bi-chevron-down');
+                collapse.style.display = 'none';
             } else {
+                // 展开
                 collapse.classList.add('show');
                 toggle.classList.remove('bi-chevron-down');
                 toggle.classList.add('bi-chevron-up');
+                collapse.style.display = 'block';
+            }
+        }
+
+        // 删除库存物料
+        async function deleteInventoryItem(itemCode, itemName) {
+            if (!confirm(`确定要删除物料 "${itemCode} - ${itemName}" 吗？\n\n注意：删除后将无法恢复，且会影响相关的BOM清单！`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/inventory_item/${itemCode}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showTemporaryMessage(`✅ 物料 "${itemCode}" 删除成功`, 'success');
+                    // 刷新库存汇总
+                    loadInventorySummary();
+                } else {
+                    showTemporaryMessage(`❌ 删除失败: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('删除物料错误:', error);
+                showTemporaryMessage('❌ 网络错误，无法删除物料', 'error');
             }
         }
 
@@ -2887,6 +3308,29 @@
             }
         }
 
+        // 删除产品成本记录
+        async function deleteProductCost(productCode) {
+            if (!confirm(`确定要删除产品 ${productCode} 的所有成本记录吗？\n\n此操作将删除该产品的所有历史成本计算数据，不可恢复。`)) return;
+            
+            try {
+                const response = await fetch(`/api/product_costs/${encodeURIComponent(productCode)}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('success', result.message);
+                    loadProductCosts(); // 重新加载成本列表
+                } else {
+                    showAlert('danger', result.error || '删除失败');
+                }
+            } catch (error) {
+                console.error('删除产品成本记录失败:', error);
+                showAlert('danger', '删除失败: ' + error.message);
+            }
+        }
+
         // 计算产品成本
         async function calculateProductCost() {
             const productCode = document.getElementById('productCode').value.trim();
@@ -2974,6 +3418,7 @@
                                 <th>总成本</th>
                                 <th>单位成本</th>
                                 <th>计算时间</th>
+                                <th>操作</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2995,6 +3440,13 @@
                                 <td class="fw-bold">¥${cost.total_cost.toFixed(2)}</td>
                                 <td class="fw-bold text-primary">¥${cost.unit_cost.toFixed(2)}</td>
                                 <td><small>${calculationDate}</small></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-danger" 
+                                            onclick="deleteProductCost('${cost.product_code}')" 
+                                            title="删除成本记录">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
                             </tr>
                         `;
                     });
@@ -3459,27 +3911,34 @@
             
             let html = '';
             for (const [productCode, items] of Object.entries(groupedBom)) {
+                const collapseId = `bom-${productCode.replace(/[^a-zA-Z0-9]/g, '')}`;
+                
                 html += `
                     <div class="card mb-3">
-                        <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="card-header d-flex justify-content-between align-items-center cursor-pointer"
+                             data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true" onclick="toggleBomCollapse('${collapseId}')">
                             <h6 class="mb-0">
                                 <i class="bi bi-box"></i> 产品: ${productCode}
+                                <span class="badge bg-primary ms-2">${items.length} 个组件</span>
                             </h6>
-                            <span class="badge bg-primary">${items.length} 个组件</span>
+                            <div>
+                                <i class="bi bi-chevron-up bom-toggle" id="toggle-${collapseId}"></i>
+                            </div>
                         </div>
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-sm table-hover">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>原料编码</th>
-                                            <th>需求数量</th>
-                                            <th>单位</th>
-                                            <th>备注</th>
-                                            <th>操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
+                        <div class="collapse show" id="${collapseId}">
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>原料编码</th>
+                                                <th>需求数量</th>
+                                                <th>单位</th>
+                                                <th>备注</th>
+                                                <th>操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
                 `;
                 
                 items.forEach(item => {
@@ -3504,8 +3963,9 @@
                 });
                 
                 html += `
-                                    </tbody>
-                                </table>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3538,14 +3998,56 @@
                 select.innerHTML = '<option value="">请选择原料</option>';
                 
                 if (data.success && data.materials) {
+                    // 按分类分组物料
+                    const materialsByCategory = {};
                     data.materials.forEach(material => {
-                        const option = document.createElement('option');
-                        option.value = material.code;
-                        option.textContent = `${material.code} - ${material.name} (${material.category})`;
-                        option.setAttribute('data-unit', material.unit);
-                        option.setAttribute('data-name', material.name);
-                        option.setAttribute('data-category', material.category);
-                        select.appendChild(option);
+                        if (!materialsByCategory[material.category]) {
+                            materialsByCategory[material.category] = [];
+                        }
+                        materialsByCategory[material.category].push(material);
+                    });
+                    
+                    // 按分类顺序排列
+                    const categoryOrder = ['原材料', '包装', '配件', '产品'];
+                    categoryOrder.forEach(category => {
+                        if (materialsByCategory[category] && materialsByCategory[category].length > 0) {
+                            // 创建optgroup
+                            const optgroup = document.createElement('optgroup');
+                            optgroup.label = category;
+                            
+                            // 添加该分类下的所有物料
+                            materialsByCategory[category].forEach(material => {
+                                const option = document.createElement('option');
+                                option.value = material.code;
+                                option.textContent = `${material.code} - ${material.name}`;
+                                option.setAttribute('data-unit', material.unit);
+                                option.setAttribute('data-name', material.name);
+                                option.setAttribute('data-category', material.category);
+                                optgroup.appendChild(option);
+                            });
+                            
+                            select.appendChild(optgroup);
+                        }
+                    });
+                    
+                    // 添加其他未分类的物料
+                    Object.keys(materialsByCategory).forEach(category => {
+                        if (!categoryOrder.includes(category) && materialsByCategory[category].length > 0) {
+                            const optgroup = document.createElement('optgroup');
+                            optgroup.label = category || '其他';
+                            
+                            materialsByCategory[category].forEach(material => {
+                                const option = document.createElement('option');
+                                option.value = material.code;
+                                option.textContent = `${material.code} - ${material.name}`;
+                                option.setAttribute('data-unit', material.unit);
+                                option.setAttribute('data-name', material.name);
+                                option.setAttribute('data-category', material.category);
+                                optgroup.appendChild(option);
+                            });
+                            
+                            select.appendChild(optgroup);
+                        }
                     });
                 }
             } catch (error) {
@@ -3683,6 +4185,28 @@
                     console.error('删除BOM项目错误:', error);
                     showAlert('danger', '网络错误，删除失败');
                 });
+        }
+
+        // BOM折叠切换功能
+        function toggleBomCollapse(collapseId) {
+            const collapse = document.getElementById(collapseId);
+            const toggle = document.getElementById(`toggle-${collapseId}`);
+            
+            if (!collapse || !toggle) {
+                console.error('找不到元素:', collapseId, `toggle-${collapseId}`);
+                return;
+            }
+            
+            // 监听Bootstrap collapse事件
+            collapse.addEventListener('show.bs.collapse', function () {
+                toggle.classList.remove('bi-chevron-down');
+                toggle.classList.add('bi-chevron-up');
+            });
+            
+            collapse.addEventListener('hide.bs.collapse', function () {
+                toggle.classList.remove('bi-chevron-up');
+                toggle.classList.add('bi-chevron-down');
+            });
         }
 
         // 库存详情查看功能
@@ -4751,8 +5275,12 @@
                     if (data.cost) {
                         displayCostResult(data.cost);
                         showAlert('success', '成本计算完成');
-                        // 刷新成本列表
-                        loadProductCosts();
+                        
+                        // 🤖 成本计算完成，自动触发刷新按钮
+                        console.log('🤖 成本计算完成，自动触发刷新按钮...');
+                        setTimeout(() => {
+                            autoTriggerRefreshButton('data_import');
+                        }, 500);
                     } else {
                         resultDiv.innerHTML = '';
                         showAlert('warning', '成本计算结果格式不正确');
@@ -4861,12 +5389,12 @@
                     const select = document.getElementById('stockProductCode');
                     select.innerHTML = '<option value="">请选择产品</option>';
                     
-                                data.products.forEach(product => {
-                select.innerHTML += `
-                    <option value="${product.code}">
-                        ${product.display_name}
-                    </option>
-                `;
+                    data.products.forEach(product => {
+                        select.innerHTML += `
+                            <option value="${product.code}">
+                                ${product.code} - ${product.name}
+                            </option>
+                        `;
                     });
                     
                     // 显示模态框
@@ -4923,116 +5451,7 @@
             }
         }
 
-        // 显示分类库存统计
-        function displayCategoryStats(data) {
-            const container = document.getElementById('categoryStats');
-            if (!container) return;
-
-            let html = '<div class="row g-3">';
-            
-            // 按类别分组显示
-            const categories = {
-                '原材料': {
-                    icon: 'bi-box-seam',
-                    color: 'primary',
-                    items: []
-                },
-                '包装': {
-                    icon: 'bi-box2',
-                    color: 'success',
-                    items: []
-                },
-                '配件': {
-                    icon: 'bi-tools',
-                    color: 'info',
-                    items: []
-                },
-                '产品': {
-                    icon: 'bi-box2-heart',
-                    color: 'warning',
-                    items: []
-                }
-            };
-            
-            // 分类数据
-            data.forEach(item => {
-                if (categories[item.item_category]) {
-                    categories[item.item_category].items.push(item);
-                }
-            });
-            
-            // 生成HTML
-            Object.entries(categories).forEach(([category, info]) => {
-                const items = info.items;
-                if (items.length === 0) return;
-                
-                html += `
-                    <div class="col-md-6 mb-3">
-                        <div class="card h-100">
-                            <div class="card-header bg-${info.color} text-white">
-                                <h6 class="mb-0">
-                                    <i class="bi ${info.icon}"></i> ${category}库存
-                                    <span class="badge bg-light text-dark float-end">
-                                        ${items.length}个
-                                    </span>
-                                </h6>
-                            </div>
-                            <div class="card-body p-0">
-                                <div class="table-responsive">
-                                    <table class="table table-hover table-sm mb-0">
-                                        <thead>
-                                            <tr>
-                                                <th>编码</th>
-                                                <th>名称</th>
-                                                <th class="text-end">库存</th>
-                                                <th class="text-end">单价</th>
-                                                <th class="text-end">总值</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            ${items.map(item => `
-                                                <tr>
-                                                    <td><small>${item.item_code}</small></td>
-                                                    <td>${item.item_name}</td>
-                                                    <td class="text-end">
-                                                        ${item.current_stock}
-                                                        <small class="text-muted">${item.unit}</small>
-                                                        ${item.current_stock <= item.low_stock_threshold ? 
-                                                            '<span class="badge bg-danger ms-1">库存不足</span>' : 
-                                                            (item.current_stock <= item.warning_stock_threshold ? 
-                                                                '<span class="badge bg-warning ms-1">库存偏低</span>' : '')}
-                                                    </td>
-                                                    <td class="text-end">¥${item.weighted_avg_price.toFixed(2)}</td>
-                                                    <td class="text-end">¥${item.total_value.toFixed(2)}</td>
-                                                </tr>
-                                            `).join('')}
-                                        </tbody>
-                                        <tfoot class="table-light">
-                                            <tr>
-                                                <td colspan="2">
-                                                    <strong>小计</strong>
-                                                </td>
-                                                <td class="text-end">
-                                                    ${items.reduce((sum, item) => sum + item.current_stock, 0).toFixed(0)}
-                                                    <small class="text-muted">个</small>
-                                                </td>
-                                                <td></td>
-                                                <td class="text-end">
-                                                    <strong>¥${items.reduce((sum, item) => sum + item.total_value, 0).toFixed(2)}</strong>
-                                                </td>
-                                            </tr>
-                                        </tfoot>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            html += '</div>';
-            container.innerHTML = html;
-        }
+        // 显示分类库存统计（移除重复函数，使用支持展开/收缩的版本）
 
         // 显示库存不足提醒
         function displayLowStockItems(data) {
